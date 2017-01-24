@@ -12,6 +12,10 @@ import os
 import errno
 
 from fitCurves import *
+from scipy.interpolate import interp1d
+
+
+
 def compare (item1, item2):
     return cmp(item1[-1][0], item2[0][0])
 def compare1 (item1,item2):
@@ -33,7 +37,7 @@ class FindStroke(object):
     #lettersdir = ""
     #diagnostics = ""
     @classmethod
-    def __init__(self,unicodeno,lettersdir,workingdir,diagnostics=False):
+    def __init__(self,unicodeno,lettersdir="letters",workingdir=".",diagnostics=False):
         self.unicodeno = unicodeno
         self.lettersdir = lettersdir
         self.workingdir = workingdir
@@ -585,7 +589,7 @@ class FindStroke(object):
         labels.sort(compare)
 
         for label in labels:
-            if abs((label[0][0]-label[-1][0])/245)<=0.001: # straight line
+            if abs((label[0][0]-label[-1][0])/255)<=0.001: # straight line
                 print label[0][0],label[0][1],label[0][2]
                 for j,point in enumerate(label):
                      if j!=0 and j<len(label)-1:
@@ -599,7 +603,7 @@ class FindStroke(object):
         clr2=0
         curves = []
         labels.sort(compare1)
-        self.stitchLabels(labels,distMax,errMax)
+        self.stitchLabelsNew(labels,distMax,errMax)
         for i,label1 in enumerate(labels):
             if len(label1) < 10 and len(label1) > 2:
                 labels.pop(i)
@@ -608,7 +612,7 @@ class FindStroke(object):
             curve = []
             for point in label:
                 curve.append(np.array((point[1],point[2])))
-            if len(curve) > 1:
+            if len(curve) > 10:
                 curves.append(curve)
 
         plt.gca().invert_yaxis()
@@ -627,12 +631,12 @@ class FindStroke(object):
                 target.write("path.addLine(to:CGPoint(x:"+str(curve[1][0])+",y:"+str(curve[1][1])+"))\n")
                 verts=[curve[0],curve[1]]
                 codes = [Path.MOVETO,Path.LINETO]
-                path = Path(verts, codes)
-                patch = patches.PathPatch(path,facecolor=None ,lw=2)
+                #path = Path(verts, codes)
+                #patch = patches.PathPatch(path,facecolor=None ,lw=2)
                 ax.add_patch(patch)
 
             else:
-                beziers = fitCurve(curve,10.0)
+                beziers = fitCurve(curve,15.0)
                 #beziers = fitCurve(currentContour, 10)
                 #print(len(beziers))
                 for bezier in beziers:
@@ -668,7 +672,7 @@ class FindStroke(object):
 
             #img1 = img3
             for points in label:
-                if i %10== 0:
+                if i == 0 or i == len(label)-1:
                     font = cv2.FONT_HERSHEY_PLAIN
                     cv2.putText(img1,str(j)+","+str(i),(points[1],points[2]), font, 0.6,(255,255,255),1,cv2.LINE_AA,False)
 
@@ -685,6 +689,65 @@ class FindStroke(object):
 
             cv2.imwrite(self.workingdir+"/labels/"+str(j)+".png",img1)
         cv2.imwrite(self.workingdir+"/labels.png",img1)
+        return curves
+    @classmethod
+
+    def stitchLabelsNew(self,labels,distMax,errMax):
+        #labels = np.uint64(labels)
+
+        for i,label in enumerate(labels):
+            for j,point in enumerate(label):
+               label[j] = [int(k) for k in label[j]]
+
+        k = 0
+        while k <len(labels):
+            i = k
+            j = i+1
+            while j <len(labels) and j >i:
+                a = np.array((labels[i][0][1],labels[i][0][2]))
+                b = np.array((labels[i][-1][1],labels[i][-1][2]))
+                c = np.array((labels[j][0][1],labels[j][0][2]))
+                d = np.array((labels[j][-1][1],labels[j][-1][2]))
+                distances = {}
+                distances['ac'] = np.linalg.norm(a-c)
+                distances['ad'] = np.linalg.norm(a-d)
+                distances['bc'] = np.linalg.norm(b-c)
+                distances['bd'] = np.linalg.norm(b-d)
+                slopediff={}
+                slopediff['ac'] = abs(labels[i][0][0]-labels[j][0][0])
+                slopediff['ad'] = abs(labels[i][0][0]-labels[j][-1][0])
+                slopediff['bc'] = abs(labels[i][-1][0]-labels[j][0][0])
+                slopediff['bd'] = abs(labels[i][-1][0]-labels[j][-1][0])
+                sorted_slope = sorted(slopediff, key=slopediff.get)
+                if True or slopediff[sorted_slope[0]]  < errMax:
+                    if distances[sorted_slope[0]] < distMax:
+                        if sorted_slope[0] == 'ac':
+                            labels[i].reverse()
+                            labels[i] = labels[i] + labels[j]
+                            labels.pop(j)
+                            k = -1
+                            j = i
+
+                        elif sorted_slope[0] == 'ad':
+                            labels[i] = labels[j] + labels[i]
+                            labels.pop(j)
+                            k =-1
+                            j = i
+                        elif sorted_slope[0] == 'bc':
+                            labels[i] = labels[i] + labels[j]
+                            labels.pop(j)
+                            k = -1
+                            j = i
+                        elif sorted_slope[0] == 'bd':
+                            labels[j].reverse()
+                            labels[i] = labels[i] + labels[j]
+                            labels.pop(j)
+                            k = -1
+                            j = i
+                j = j + 1
+
+            k += 1
+
     @classmethod
 
     def stitchLabels(self,labels,distMax,errMax):

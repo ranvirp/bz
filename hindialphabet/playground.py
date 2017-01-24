@@ -84,7 +84,7 @@ def findWidthOfStroke(point,theta,edges,maxWidth):
             return [np.linalg.norm(np.array((cur_x,cur_y))-np.array((x,y))),[point,(cur_x,cur_y)]]
     return []
 
-def dealWithOtherRays(swt,rays_others,edges,theta_visible,maxWidth):
+def dealWithOtherRays(swt,rays_others,edges,theta_visible,maxWidth,sobelx64f):
 
      # Try moving the ray 10 degrees plus and minus and see if the length of the ray increases or decreases,
      # if length increases both sides then keep the ray otherwise keep moving in the direction where it is decreasing
@@ -100,11 +100,18 @@ def dealWithOtherRays(swt,rays_others,edges,theta_visible,maxWidth):
              if dist1[0] > length and dist2[0] > length :
                  # this ray should be included
                  median = (np.array(ray[1]) + np.array(ray[0]))/2
-                 swt[median[1],median[0]] = max(theta_visible[ray[0][1],ray[0][0]],theta_visible[ray[1][1],ray[1][0]])
+                 if sobelx64f[ray[0][1],ray[0][0]] >0:
+                     swt[median[1],median[0]] = theta_visible[ray[0][1],ray[0][0]]
+                 else:
+                     swt[median[1],median[0]] = theta_visible[ray[1][1],ray[1][0]]
                  rays_others.pop(i)
              elif dist1[0]>length and dist2[0] < length:
                   median = (np.array(dist2[1]) + np.array(ray[0]))/2
-                  swt[median[1],median[0]] = max(theta_visible[ray[0][1],ray[0][0]],theta_visible[dist2[1][1][1],dist2[1][1][0]])
+                  swt[median[1],median[0]] = theta_visible[ray[0][1],ray[0][0]]
+                  #,theta_visible[dist2[1][1][1],dist2[1][1][0]])
+             elif dist1[0] < length and dist2[0] > length:
+                  median = (np.array(dist1[1]) + np.array(ray[0]))/2
+                  swt[median[1],median[0]] = theta_visible[ray[0][1],ray[0][0]]
                   rays_others.pop(i)
          except IndexError:
             continue
@@ -239,15 +246,23 @@ def swt1(theta, edges, sobelx64f, sobely64f,img,initialthickness=75,slopeErr=0.1
              grad_x_g = step_x_g / mag_g
              grad_y_g = step_y_g / mag_g
              #normal_g = -1* sobely64f/sobelx64f
-
-             for x in xrange(edges.shape[1]):
-                 for y in xrange(edges.shape[0]):
-                     if edges[y, x] > 0 and (sobelx64f[y,x] >0  or sobely64f[y,x] < 0):
+             indices = np.where((edges > 0))# & ((sobelx64f >0)  | (sobely64f < 0)))
+             print len(indices[0])
+             #print indices
+             #sys.exit()
+             #for x in xrange(edges.shape[1]):
+            #     for y in xrange(edges.shape[0]):
+             for loopvariable,value in enumerate(indices[0]):
+                         y = value
+                         x = indices[1][loopvariable]
+                        # if edges[y, x] > 0 and (sobelx64f[y,x] >0  or sobely64f[y,x] < 0):
                          #step_x = step_x_g[y, x]
                          #step_y = step_y_g[y, x]
                          #mag = mag_g[y, x]
                          grad_x = grad_x_g[y, x]
                          grad_y = grad_y_g[y, x]
+                         if math.isnan(grad_x):
+                              continue
 
 
                          ray = []
@@ -262,15 +277,16 @@ def swt1(theta, edges, sobelx64f, sobely64f,img,initialthickness=75,slopeErr=0.1
                              if cur_x != prev_x or cur_y != prev_y:
                                  # we have moved to the next pixel!
                                  try:
+                                     theta_point = theta[y, x]
+                                     alpha = theta[int(cur_y), int(cur_x)]
+                                     thickness = math.sqrt( (cur_x - x) * (cur_x - x) + (cur_y - y) * (cur_y - y) )
+
                                      if edges[int(cur_y), int(cur_x)] > 0  :
                                          # found edge,
                                          #print("found edge")
 
 
                                          ray.append((int(cur_x), int(cur_y)))
-                                         theta_point = theta[y, x]
-                                         alpha = theta[int(cur_y), int(cur_x)]
-                                         thickness = math.sqrt( (cur_x - x) * (cur_x - x) + (cur_y - y) * (cur_y - y) )
                                          #if abs(thickness -initialthickness)/initialthickness
                                          if abs(abs(alpha - theta_point) - np.pi) < slopeErr :
                                          #if math.acos(grad_x * -grad_x_g[cur_y, cur_x] + grad_y * -grad_y_g[cur_y, cur_x]) < np.pi/2.0:
@@ -292,6 +308,7 @@ def swt1(theta, edges, sobelx64f, sobely64f,img,initialthickness=75,slopeErr=0.1
                                                  #swt[midy,midx] = max(theta_visible[int(cur_y),int(cur_x)],theta_visible[y,x])
                                                  rays.append(ray)
                                                  newedges[int(cur_y),int(cur_x)] = 0
+                                                 break
 
 
                                              #for (rp_x, rp_y) in ray:
@@ -302,9 +319,9 @@ def swt1(theta, edges, sobelx64f, sobely64f,img,initialthickness=75,slopeErr=0.1
 
                                              rays_others.append(ray)
 
-                                         break
+                                         #break
 
-                                         break
+                                         #break
                                      # this is positioned at end to ensure we don't add a point beyond image boundary
                                      #ray.append((int(cur_x), int(cur_y)))
                                  except IndexError:
@@ -802,7 +819,7 @@ def moveAlongEdge(img,filename):
          #cv2.imwrite("labels/"+str(j)+".jpg",img1)
      cv2.imwrite("labels.png",img1)
 
-img = cv2.imread("ka.jpg",0)
+img = cv2.imread("ga.jpg",0)
 imgcolor = cv2.cvtColor(img,cv2.COLOR_GRAY2RGB)
 edges = cv2.Canny(img,170,255)
 cv2.imwrite('edgewithaccurategradient.jpg',edges)
