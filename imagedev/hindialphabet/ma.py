@@ -166,7 +166,7 @@ class fp(object):
             else:
                 dist0 = np.linalg.norm(p2i-p1)
         edges.append([p1,fpi]);edges.append([p2i,fpi]);edges.append([p1]);edges+=[[p2i],[p1,p2i],[fpi]]
-        print np.cross(fpi-p1,p1prime),abs(dist2-dist1)<1.0
+        #print np.cross(fpi-p1,p1prime),abs(dist2-dist1)<1.0
         if np.cross(fpi-p1,p1prime)>=0 and abs(dist2-dist1)<1.0:
           return edges,r1,fpi
         else:
@@ -400,7 +400,7 @@ class fp(object):
         while len(concave_vert) >0:
             #print concave_vert
             i = concave_vert.pop(-1)
-            #print i
+            #print "inserting",i
             e2 = i
             e1 = self.prevedge(i)
             e1prime = self.p(self.edges[e1],0.7)
@@ -422,7 +422,7 @@ class fp(object):
             ind1 = 0
             ind3 = 0
             #print "before adding",i
-            #print its
+            #print self.its
 
             for ind2,cnt in enumerate(self.cnts):
                 for ind,k in enumerate(cnt):
@@ -431,19 +431,20 @@ class fp(object):
                     elif k ==i:
                         ind1 = ind
                         ind3 = ind2
-            for k in  xrange(len(self.edges)-1,i,-1):
-                if k >i:
-
+            for k in  xrange(len(self.edges)-1,i-1,-1):
+                if k >=i:
                     self.its[k+1] = self.its[k]
             self.its[i]=iv(0.0,1.001)
             lowerbound = self.its[e1].begin
+            #print e1,lowerbound,"lb"
             self.its[e1] = iv(lowerbound,0.7)
             upperbound = self.its[i+1].end
+            #print i+1,upperbound,"ub"
             self.its[i+1] =iv(0.3,upperbound)
 
             self.cnts[ind3].insert(ind1+1,i+1)
             #print "after adding",i
-            #print its
+            #print self.its
 
             #for j,k in enumerate(concave_vert):
             #    if k>i:
@@ -538,7 +539,7 @@ class fp(object):
             noofsteps += 1
             e1prev,tprev,e2prev,rprev = e1,t,e2,r
             e1,t,e2,r,mp = self.updateT(e1,t,e2,r,stepsize)
-            print count,e1,t,e2,r,mp
+            print count,e1,t,e2,r
             if e1 == -1 or t==-1 or r==-1:
                 break
             dist = np.linalg.norm(mp-self.p(self.edges[e1],t))
@@ -554,14 +555,14 @@ class fp(object):
                 print "curvature failure at ",e2," dist=",dist,' R=',R2
             '''
             mpcurr = [mp,e1,t,e2,r,dist]
-            if noofsteps>2 :
+            if dist>10:# or noofsteps>2 :
                 print "now doing distance check"
                 pe,mindist,mink,dist = self.distCheck(e1,t,e2,r,mp)
                 noofsteps = 0
 
                 #print pe
                 try:
-                    print mplast
+                    #print mplast
                     e1prev,tprev,e2prev,rprev = mplast[1:5]
 
 
@@ -586,7 +587,7 @@ class fp(object):
                         if mplast[1]!= mpcurr[1]:#e1 has changed
                             k = -2
                             curre = mpcurr[1]
-                            while points[k][1]!=mplast[1]:
+                            while curre!=mplast[1]:
                                 print k
                                 if points[k][1]!=curre:
                                     curre = points[k][1]
@@ -597,6 +598,7 @@ class fp(object):
                                 if len(pe1)==0:
                                     mplast = mpcurr1
                                     break
+
                                 k = k-1
                         mps = self.retract(mpcurr,mplast,mink,mindist)
                         mpfn = mps.pop(-1)
@@ -936,7 +938,7 @@ class fp(object):
                    continue
                disti,fpi,ti = self.distanceIt(i,mpn)
                if abs(disti-distk)<2.0:
-                   mpfn1 = [mpn,i,ti,mpfn[1],mpfn[2],disti]
+                   mpfn1 = [mpn,mpfn[1],mpfn[2],i,ti,disti]
                    mpfn2 = [mpn,i,ti,mpfn[3],mpfn[4],disti]
                    mps.append(mpfn1);mps.append(mpfn2)
 
@@ -1256,3 +1258,8 @@ class fp(object):
 
 
         return 1
+    def pts(self,pts):
+        pts1 = []
+        for pt in pts:
+            pts1.append([pt[0]])
+        check.printEdges(self.edges+pts1,0,False)
