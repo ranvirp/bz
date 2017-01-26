@@ -16,6 +16,16 @@ count = 0
 pairs = {}
 tracededges=[]
 class fp(object):
+    maxcount = 1
+    def __init__(self,letter):
+        #self.edges,self.its,self.cnts,self.vertices,self.convex_vert,self.concave_vert=
+        self.modEdges(letter)
+        self.untracededges=[]
+        self.tracededges = []
+        for k,_ in enumerate(self.edges):
+            self.untracededges.append(k)
+
+
 
     def ccw(self,A,B,C):
             return (C[1]-A[1])*(B[0]-A[0]) > (B[1]-A[1])*(C[0]-A[0])
@@ -67,13 +77,15 @@ class fp(object):
                 return r,True
             else:
                 #print "parallel normals- get out of this",val1,val2
-                return random.uniform(0,1),False #a random number between 0 and 1
+                return r,False
+                #return random.uniform(0,1),False #a random number between 0 and 1
             #print r
         else: # not parallel normal
             fp = self.fprime(quad1,t,quad2,r)
             if fp != 0:
                 val1 = self.f(quad1,t,quad2,r)/fp
             else:
+                #print "fp is zero"
                 val1 = self.f(quad1,t,quad2,r)
             if  abs(val1) < 0.001:
                 #print p1+alpha/denominator*normal1-p2-beta/denominator*normal2
@@ -88,13 +100,212 @@ class fp(object):
                     return random.uniform(0,1),False
                 else:
                     return r,False
+    def solve1(self,quad1,t,quad2,r,err=10.0):
+        p1 = self.p(quad1,t)
+        p1prime = self.pprime(quad1,t)
+        p2 = self.p(quad2,r)
+        p2prime = self.pprime(quad2,r)
+        normal1 = np.array([p1prime[1],-1*p1prime[0]])
+        normal2 = np.array([p2prime[1],-1*p2prime[0]])
+        denominator = np.dot(normal1,p2prime)
+        beta = np.dot(p2-p1,p1prime)
+        alpha = np.dot(p2-p1,p2prime)
+        if abs(denominator) < 0.01: # parallel normals
+            if abs(alpha) <err and abs(beta) < err : # overlapping normals
+                #print "overlapping normal"
+                return r,True
+            else:
+                #print "parallel normals- get out of this",val1,val2
+                return random.uniform(0,1),False #a random number between 0 and 1
+            #print r
+        else: # not parallel normal
+            fp = self.fprime(quad1,t,quad2,r)
+            if fp != 0:
+                val1 = self.f(quad1,t,quad2,r)/fp
+            else:
+                val1 = abs(self.f(quad1,t,quad2,r))
+            if  abs(val1) < 0.001:
+                #print p1+alpha/denominator*normal1-p2-beta/denominator*normal2
+                return r,True
+            else:
+            #    print "next iteration"
+                #print r
+                #print val1
+                r = r - val1
+                #print r
+                if r>1 or r<0:
+                    return random.uniform(0,1),False
+                else:
+                    return r,False
+    def footprint(self,quad1,t,quad2,initialr=-1):
+        p1 = self.p(quad1,t)
+        p1prime = self.pprime(quad1,t)
+        n1 = np.array([p1prime[1],-1*p1prime[0]])
+
+        dist0,p2i,r1 =self.distance(quad2,p1) #randomly ..no partcular thought
+        edges = []
+        edges.append([p1,p2i])
+        #print dist0,r1
+        if dist0 ==float('inf'):
+            #print "here"
+            p2i = self.p(quad2,0.5);dist0 = np.linalg.norm(p2i-p1)
+
+        for i in xrange(20):
+            costheta1 = np.dot(p2i-p1,n1)/(np.linalg.norm(n1)*dist0)
+            if abs(costheta1)>0.01:
+                dist1 =  dist0/(2*costheta1)
+            else:
+                dist1 = dist0/2.0
+            fpi = p1 +dist1*n1/np.linalg.norm(n1)
+            dist2,p2i,r1 =self.distance(quad2,fpi) #randomly ..no partcular thought
+            #print dist2,p2i,r1
+            if dist2 ==float('inf'):
+                break
+            if abs(dist2-dist1)<1.0:
+                break
+            else:
+                dist0 = np.linalg.norm(p2i-p1)
+        edges.append([p1,fpi]);edges.append([p2i,fpi]);edges.append([p1]);edges+=[[p2i],[p1,p2i],[fpi]]
+        print np.cross(fpi-p1,p1prime),abs(dist2-dist1)<1.0
+        if np.cross(fpi-p1,p1prime)>=0 and abs(dist2-dist1)<1.0:
+          return edges,r1,fpi
+        else:
+          return edges,-1,fpi
+
+
+
+    def footprintDiscarded(self,quad1,t,quad2,initialr=-1,diagnostics=False,err=15.0,err2=10.0):
+        edges = []
+
+        def f1(quad1,t,quad2,r):
+                p1 = self.p(quad1,t)
+                p1prime = self.pprime(quad1,t)
+                normal1 = np.array([p1prime[1],-1*p1prime[0]])
+                p2 = self.p(quad2,r)
+                p2prime = self.pprime(quad2,r)
+                normal2 = np.array([p2prime[1],-1*p2prime[0]])
+                denominator = np.dot(normal1,p2prime)
+                if abs(denominator) >1.0 :
+                    alpha = np.dot(p2-p1,p2prime)/denominator
+                    beta = np.dot(p2-p1,p1prime)/denominator
+                else:
+                    alpha = beta = np.linalg.norm(p1-p2)/2.0
+                    alpha = alpha/np.linalg.norm(p1prime)
+                    beta = beta/np.linalg.norm(p2prime)
+                #print alpha,beta
+
+                fp1 = p1 + alpha * normal1
+                fp2 = p2 + beta * normal2
+                #dv = fp1-fp2
+                #a1 = alpha*normal1;b1=beta*normal2
+
+                diff = np.linalg.norm(fp1-fp2)
+                #diff1 = abs(np.linalg.norm(alpha*normal1)-np.linalg.norm(beta*normal2))
+                #return [abs(self.f(quad1,t,quad2,r))+5*diff,fp1,fp2,p1,p2,normal1,normal2,alpha,beta]
+                return [abs(np.linalg.norm(alpha*normal1)-np.linalg.norm(beta*normal2)),fp1,fp2,p1,p2,normal1,normal2,alpha,beta]
+
+                #return [abs(self.f(quad1,t,quad2,r))+(abs(alpha)-alpha+abs(beta)-beta)*+diff,fp1,fp2,p1,p2,normal1,normal2,alpha,beta]
+        def f2(quad1,t,quad2,r):
+             return np.dot(self.p(quad1,t)-self.p(quad2,r),self.pprime(quad2,r))
+        def f3(quad1,t,quad2,r):
+             return np.dot(self.p(quad1,t)-self.p(quad2,r),self.pprime(quad1,r))
+        def f4(quad1,t,quad2,r):
+            pdash = self.pprime(quad2,r)
+            p1prime = self.pprime(quad1,t)
+            n = np.array([pdash[1],-1*pdash[0]])
+            return np.dot(p1prime,n)
+
+
+
+
+
+        rs = []
+        rs.append(0.0)
+        rs.append(1.0)
+        i = 2
+        #fxi = [2.0,3.0]
+        fxi = f1(quad1,t,quad2,rs[-1])
+        fximinus1 =f1(quad1,t,quad2,rs[-2])
+        while i<100:
+            r = rs[-1]
+            if abs(fxi[0]-fximinus1[0])<0.01 or (abs(fxi[0])<err   and r>=0 and r<=1 and fxi[-1]>0 and fxi[-2]>0):
+                #print fxi[0]-fximinus1[0]
+                break
+            rn = rs[-1]-(fxi[0]*(rs[-1]-rs[-2]))/(fxi[0]-fximinus1[0])
+            rs.append(rn)
+            fximinus1 = fxi
+            fxi = f1(quad1,t,quad2,rs[-1])
+            i += 1
+        rs1 = [];rs1.append(0.0);rs1.append(1.0)
+        p1 = self.p(quad1,t)
+        p1prime = self.pprime(quad1,t)
+        n1 = np.array([p1prime[1],-1*p1prime[0]])
+
+        dist1,p2i,r1 =self.distance(quad2,p1) #randomly ..no partcular thought
+        costheta1 = np.dot(p2i-p1,n1)/(np.linalg.norm(n1)*dist)
+        fpi = p1 + dist1/(2*costheta1)*n1/np.linalg.norm(n1)
+        dist1,p2i,r2 =self.distance(quad2,fpi) #randomly ..no partcular thought
+
+
+        gxi = self.f(quad1,t,quad2,rs1[-1])
+        gximinus1 =self.f(quad1,t,quad2,rs1[-2])
+        i =0
+        while i<100:
+            r1 = rs1[-1]
+            print i,r1
+            if abs(f4(quad1,t,quad2,r1))<0.001:
+                print "first condition",abs(f2(quad1,t,quad2,r1)),abs(f3(quad1,t,quad2,r1))
+                if abs(f2(quad1,t,quad2,r1))<0.01 and abs(f3(quad1,t,quad2,r1))<0.01:
+                    print "second condition"
+                    break
+                else:
+                    # how to generate next rn
+                    print "parallel normals"
+                    _,_,r1n =self.distance(quad2,self.p(quad1,t)) #randomly ..no partcular thought
+                    rs1.append(r1n)
+
+            else:
+                fxi = f1(quad1,t,quad2,r1)
+                if abs(gxi-gximinus1)<0.01:
+                    if (abs(fxi[0])<0.01 and fxi[-1]>0 and fxi[-2]>0 and abs(gxi)<0.01   and r1>=0 and r1<=1):
+                    #print fxi[0]-fximinus1[0]
+                        break
+                    else:
+                        # get some  suggestion
+                        r1n = random.uniform(0,1)
+                        rs1.append(r1n)
+
+
+                else:
+                    r1n = rs1[-1]-(gxi*(rs1[-1]-rs1[-2]))/(gxi-gximinus1)
+                    rs1.append(r1n)
+                    gximinus1 = gxi
+                    #gxi = self.f(quad1,t,quad2,rs1[-1])
+                    gxi = self.f(quad1,t,quad2,rs1[-1])
+
+            i += 1
+
+        print fxi,r,gxi,r1
+        #edges += [[fxi[1]],[fxi[2]],[fxi[3],fxi[4]],[fxi[3],fxi[3]+fxi[7]*fxi[5]],[fxi[4],fxi[4]+fxi[8]*fxi[6]],[fxi[1],fxi[2]]]
+        fxi = f1(quad1,t,quad2,r1)
+        edges += [[fxi[1]],[fxi[2]],[fxi[3],fxi[4]],[fxi[3],fxi[3]+fxi[7]*fxi[5]],[fxi[4],fxi[4]+fxi[8]*fxi[6]],[fxi[1],fxi[2]]]
+
+        #initialr=-1,diagnostics=False
+        #print "footprint,",fxi[0]
+        if abs(fxi[0])<err and abs(gxi)<err and r>=0 and r<=1 and fxi[-1]>0 and fxi[-2] and abs(r-r1)<0.001>0:
+            #return r,edges
+            return edges,r,fxi[1]
+        else:
+            #print fxi[0]
+            return edges,-1,fxi[1]
+
     def distance(self,quad,p0):#distance between a point and p
        if len(quad)==1: #single point
           return np.linalg.norm(p0-quad[0])
        t = 0.5
        pdprime = 2*(quad[2]+quad[0]-2*quad[1])
 
-       for j in xrange(100): # maximum 100 iterations
+       for j in xrange(10): # maximum 100 iterations
             val = np.dot(self.pprime(quad,t),self.p(quad,t)-p0)
             if val>=0 and abs(val) <= 0.01:
                 break
@@ -105,17 +316,27 @@ class fp(object):
                     t = random.uniform(0,1)
        p1 = self.p(quad,t)
        p1prime = self.pprime(quad,t)
-       if np.cross(p0-p1,p1prime) >=0: # point is on right side of the side
+       #print "val is",val
+       if np.cross(p0-p1,p1prime) >=0 and abs(val)<0.01: # point is on right side of the side
             return np.linalg.norm(p1-p0),p1,t
        else:
            return float('inf'),p1,t
-    def distanceIt(self,ind,p0,its,edges):#distance between a point and p
-           quad = edges[ind]
+    def distanceIt(self,ind,p0):#distance between a point and p
+           quad = self.edges[ind]
            dist,p1,t = self.distance(quad,p0)
-           if its[ind].search(t)!=set():
+           if self.its[ind].search(t)!=set():
                return dist,p1,t
            else:
                return float("inf"),[],-1
+    def distanceItn(self,ind,p0):
+        quad = self.edges[ind]
+        dist,p1,t = self.distance(quad,p0)
+        if self.its[ind].search(t)!=set():
+            return dist,p1,ind,t
+        else:
+            return float("inf"),[],-1,-1
+
+
 
 
     def friends(self,e,cnts,convex_vert):
@@ -132,128 +353,166 @@ class fp(object):
             init = self.prevedge(init,cnts)
         return frds
 
+    def manage_interval(self,mplast,mpcurr):
+        # TODO:
+        first ={}
+        first[mplast[1]] = mplast[2]
+        first[mplast[3]] = mplast[4]
+        second = {}
+        second[mpcurr[1]] = mpcurr[2]
+        second[mpcurr[3]] = mpcurr[4]
+        e11 = mplast[1];e12=mpcurr[1]
+        e21= mplast[3];e22 =mpcurr[3]
+        e1 = e11
+        while (e1!=e12):
+            if e1 in first:
+                self.its[e1].chop(first[e1],self.its[e1].end())
+            else:
+                self.its[e1].chop(self.its[e1].begin(),self.its[e1].end())
 
-    def insertReflex(self,edges,vertices,cnts,concave_vert,its):#
-        concave_vert = copy.copy(concave_vert)
+            e1 = self.nextedge(e1)
+        if e12 in first:
+            inite1 = first[e12]
+        else:
+            inite1 = self.its[e12].begin()
+        self.its[e12].chop(inite1,second[e12])
+        e2 = e21
+        while e2!=e21:
+            if e2 in first:
+                self.its[e1].chop(self.its[e2].begin(),first[e2])
+            else:
+                self.its[e1].chop(self.its[e2].begin(),self.its[e2].end())
+            e2 = self.prevedge(e2)
+        if e22 in first:
+            ende2 = first[e22]
+        else:
+            ende2 = self.its[e22].end()
+
+        self.its[e22].chop(second[e22],ende2)
+
+
+
+    def insertReflex(self):#
+        concave_vert = copy.copy(self.concave_vert)
         concave_vert.sort()
         #print cnts
-        cnts1 = copy.copy(cnts)
+        cnts1 = copy.copy(self.cnts)
         while len(concave_vert) >0:
             #print concave_vert
             i = concave_vert.pop(-1)
             #print i
             e2 = i
-            e1 = self.prevedge(i,cnts)
-            e1prime = self.p(edges[e1],0.9)
-            e2prime = self.p(edges[e2],0.1)
+            e1 = self.prevedge(i)
+            e1prime = self.p(self.edges[e1],0.7)
+            e2prime = self.p(self.edges[e2],0.3)
             quad = []
             quad.append(e1prime)
             #print e1prime
-            quad.append(vertices[i])
+            quad.append(self.vertices[i])
             quad.append(e2prime)
             #print e1,e2
             #lastts[e1][1] = 0.999
             #edges[e1][2] = e1prime
             #edges[e2][0] = e2prime
-            vertices.insert(i,e1prime)
-            vertices[i+1] = e2prime
+            self.vertices.insert(i,e1prime)
+            self.vertices[i+1] = e2prime
             #lastts[i+1] = [0.001,1.0]
 
-            edges.insert(i,quad)
+            self.edges.insert(i,quad)
             ind1 = 0
             ind3 = 0
             #print "before adding",i
             #print its
 
-            for ind2,cnt in enumerate(cnts):
+            for ind2,cnt in enumerate(self.cnts):
                 for ind,k in enumerate(cnt):
                     if k > i:
                         cnt[ind] = k+1
                     elif k ==i:
                         ind1 = ind
                         ind3 = ind2
-            for k in  xrange(len(edges)-1,i,-1):
+            for k in  xrange(len(self.edges)-1,i,-1):
                 if k >i:
 
-                    its[k+1] = its[k]
-            its[i]=iv(0.01,1.001)
-            lowerbound = its[e1].begin
-            its[e1] = iv(lowerbound,0.9)
-            upperbound = its[i+1].end
-            its[i+1] =iv(0.1,upperbound)
+                    self.its[k+1] = self.its[k]
+            self.its[i]=iv(0.0,1.001)
+            lowerbound = self.its[e1].begin
+            self.its[e1] = iv(lowerbound,0.7)
+            upperbound = self.its[i+1].end
+            self.its[i+1] =iv(0.3,upperbound)
 
-            cnts[ind3].insert(ind1+1,i+1)
+            self.cnts[ind3].insert(ind1+1,i+1)
             #print "after adding",i
             #print its
 
-            for j,k in enumerate(concave_vert):
-                if k>i:
-                    concave_vert[j] = k+1
+            #for j,k in enumerate(concave_vert):
+            #    if k>i:
+            #        concave_vert[j] = k+1
 
 
         #print cnts
         #print its
-        return its
-    def nextt(self,e1,t,its,cnts,e2,stepsize=0.05):
-        if its[e1].search(t+stepsize) != set():
+        return self.its
+    def nextt(self,e1,t,e2,stepsize=0.05):
+        if self.its[e1].search(t+stepsize) != set():
             return e1,t+stepsize
         else:
             preve1 = e1
-            e1 = self.nextedge(e1,cnts)
+            e1 = self.nextedge(e1)
             #tracededges.append(preve1)
             if e1!=e2:
-                self.remove_interval(its,preve1,t,its[preve1].end())
-                return e1,its[e1].begin()
+                #self.remove_interval(its,preve1,t,its[preve1].end())
+                return e1,self.its[e1].begin()
             else:
                 return -1,-1
-    def prevr(self,e2,r,its,cnts,e1,stepsize=0.05):
-        print "in prevr",e2,r,its[e2],r-stepsize
-        if its[e2].search(r-stepsize) != set():
+    def prevr(self,e2,r,e1,stepsize=0.05):
+        print "in prevr",e2,r,self.its[e2],r-stepsize
+        if self.its[e2].search(r-stepsize) != set():
             return e2,r-stepsize
         else:
             preve2 = e2
-            e2 = self.prevedge(e2,cnts)
+            e2 = self.prevedge(e2)
             #tracededges.append(preve1)
             if e2!=e1:
-                self.remove_interval(its,preve2,its[preve2].begin(),r)
+                #self.remove_interval(its,preve2,its[preve2].begin(),r)
 
-                print "returning e2,",e2,its[e2].end()-0.001
-                return e2,its[e2].end()-0.001
+                #print "returning e2,",e2,self.its[e2].end()-0.001
+                return e2,self.its[e2].end()-0.001
             else:
                 return -1,-1
-    def updateT(self,e1prev,tprev,e2prev,rprev,its,cnts,edges,stepsize=0.05):
+    def updateT(self,e1prev,tprev,e2prev,rprev,stepsize=0.05):
         # try using nextt,prevr if r fails, try using prevr,nextt, if both fails
         # then stop and return
-        e1next,tnext = self.nextt(e1prev,tprev,its,cnts,e2prev,stepsize)
+        e1next,tnext = self.nextt(e1prev,tprev,e2prev,stepsize)
         if e1next == -1:
             return -1,-1,-1,-1,[]
         #print e1next,tnext
 
-        _,rnext,mp,x = self.footprintIt(edges[e1next],tnext,edges[e2prev],its[e1next],its[e2prev],-1)
+        _,rnext,mp,x = self.footprintIt(e1next,tnext,e2prev)
         if rnext == -1:
-            print "failed ",e1next,tnext,e2prev
-            e2next,rnext= self.prevr(e2prev,rprev,its,cnts,e1prev,stepsize)
-            print "now trying ",e2next,rnext,e1prev
+            #print "failed ",e1next,tnext,e2prev
+            e2next,rnext= self.prevr(e2prev,rprev,e1prev,stepsize)
+            #print "now trying ",e2next,rnext,e1prev
             if e2next ==-1:
-                print "this also failed as hit end of contour"
+            #    print "this also failed as hit end of contour"
                 return -1,-1,-1,-1,[]
 
-            _,tnextn,mp,x,tfin,rfin = self.footprintIt(edges[e2next],rnext,edges[e1prev],its[e2next],its[e1prev],-1,True)
-            print e2next,rnext,e1prev,tnextn,tfin,rfin
+            _,tnextn,mp,x = self.footprintIt(e2next,rnext,e1prev)
+            #print e2next,rnext,e1prev,tnextn
             if tnextn==-1:
-                print "this also failed"
+            #    print "this also failed"
                 if e1next==e1prev:
-                    e1next = self.nextedge(e1next,cnts)
-                print "now let us try ",e2next,rnext,e1next
+                    e1next = self.nextedge(e1next)
+            #    print "now let us try ",e2next,rnext,e1next
                 #try
                 #e1next,tnext = self.nextt(e1next,tnext,its,cnts,e2next,stepsize)
                 #print "try nextt",e1next,tnext," with e2 as ",e2next
-                _,tnextn,mp,x,tfin,rfin = self.footprintIt(edges[e2next],rnext,edges[e1next],its[e2next],its[e1next],-1,True)
+                _,tnextn,mp,x = self.footprintIt(e2next,rnext,e1next)
                 if tnextn ==-1:
-                    print "this also failed, so let us try ",e1next,tnext,e2next
-                    _,rnext,mp,x = self.footprintIt(edges[e1next],tnext,edges[e2next],its[e1next],its[e2next],-1)
+            #        print "this also failed, so let us try ",e1next,tnext,e2next
+                    _,rnext,mp,x = self.footprintIt(e1next,tnext,e2next)
                     if rnext == -1:
-                        print "this also failed so let us give up"
+            #            print "this also failed so let us give up"
                         return -1,-1,-1,-1,[]
                     else:
                         return e1next,tnext,e2next,rnext,mp
@@ -265,7 +524,7 @@ class fp(object):
                 return e1prev,tnextn,e2next,rnext,mp
         else:
             return e1next,tnext,e2prev,rnext,mp
-    def iterate(self,e1,t,e2,r,mplast,its,cnts,edges,points,convex_vert,stepsize=0.05,counts=10):
+    def iterate(self,e1,t,e2,r,mplast,points,stepsize=0.05,counts=10):
         if e1==e2:
             return
         print "beginning",e1,t,e2,r,len(points),counts
@@ -278,17 +537,13 @@ class fp(object):
             count += 1
             noofsteps += 1
             e1prev,tprev,e2prev,rprev = e1,t,e2,r
-            e1,t,e2,r,mp = self.updateT(e1,t,e2,r,its,cnts,edges,stepsize)
+            e1,t,e2,r,mp = self.updateT(e1,t,e2,r,stepsize)
             print count,e1,t,e2,r,mp
-
-
-            if e1 == -1:
+            if e1 == -1 or t==-1 or r==-1:
                 break
-
-
-
-            points.append([mp])
-            dist = np.linalg.norm(mp-self.p(edges[e1],t))
+            dist = np.linalg.norm(mp-self.p(self.edges[e1],t))
+            #points.append([mp])
+            points.append([mp,e1,t,e2,r,dist])
             '''
             R1 = self.radiusCurvature(edges[e1],t)
             R2 = self.radiusCurvature(edges[e2],r)
@@ -301,11 +556,12 @@ class fp(object):
             mpcurr = [mp,e1,t,e2,r,dist]
             if noofsteps>2 :
                 print "now doing distance check"
-                pe,mindist,mink,dist = self.distCheck(e1,t,e2,r,mp,edges,its,cnts,convex_vert)
+                pe,mindist,mink,dist = self.distCheck(e1,t,e2,r,mp)
                 noofsteps = 0
 
                 #print pe
                 try:
+                    print mplast
                     e1prev,tprev,e2prev,rprev = mplast[1:5]
 
 
@@ -313,8 +569,8 @@ class fp(object):
                         #mpcurr = [mp,e1,t,e2,r,dist]
                         print "dist failure with ",pe
                         #while noofsteps>1:
-                        for popcount in xrange(3):
-                            points.pop(-1)
+                        #for popcount in xrange(3):
+                        #    points.pop(-1)
                         negdist = False
                         for (_,dist0,r) in pe:
                             if dist0 <0:
@@ -326,35 +582,37 @@ class fp(object):
                             continue
 
                         #print pes
-                        print its[mpcurr[1]],its[mpcurr[3]]
-                        mpfn,pes = self.retract(mpcurr,mplast,edges,its,pe,cnts,convex_vert)
-                        print "retracted..first"
+                        #print its[mpcurr[1]],its[mpcurr[3]]
+                        if mplast[1]!= mpcurr[1]:#e1 has changed
+                            k = -2
+                            curre = mpcurr[1]
+                            while points[k][1]!=mplast[1]:
+                                print k
+                                if points[k][1]!=curre:
+                                    curre = points[k][1]
+                                    mpcurr = points[k]
 
+                                mpcurr1 = points[k]
+                                pe1,mindist1,mink1,dist1 = self.distCheck(mpcurr1[1],mpcurr1[2],mpcurr1[3],mpcurr1[4],mpcurr1[0])
+                                if len(pe1)==0:
+                                    mplast = mpcurr1
+                                    break
+                                k = k-1
+                        mps = self.retract(mpcurr,mplast,mink,mindist)
+                        mpfn = mps.pop(-1)
+                        print "retracted..first",mps
                         e1,t,e2,r = mpfn[1:5]
-                        if e1 == e1prev:
-                            self.remove_interval(its,e1,tprev,t)
-                        else:
-                            self.remove_interval(its,e1prev,tprev,its[e1prev].end())
-                            self.remove_interval(its,e1,its[e1].begin(),t)
-
-                        if e2 == e2prev:
-                            self.remove_interval(its,e2,r,rprev)
-                        else:
-                            self.remove_interval(its,e2prev,its[e2prev].begin(),rprev)
-                            self.remove_interval(its,e2,r,its[e2].end())
-
-
-
-                        points.append([mpfn[0]])
-                        for (e3,_,r) in pe:
-                            if e3 in convex_vert or e3!=self.nextedge(mpfn[1],cnts):
-                                self.iterate(mpfn[1],mpfn[2],e3,r,mpfn,its,cnts,edges,points,convex_vert,counts=counts)
-                            if e3==17:
-                                print mpfn[3]
-                            self.iterate(e3,r,mpfn[3],mpfn[4],mpfn,its,cnts,edges,points,convex_vert,counts=counts)
-                        if len(pe)>0:
+                        #points.append([mpfn[0]])
+                        points.append(mpfn)
+                        for k,mp1 in enumerate(mps):
+                            #if mp[1] in convex_vert or e3!=self.nextedge(mpfn[1],cnts):
+                            print mp1
+                            self.iterate(mp1[1],mp1[2],mp1[3],mp1[4],mp1,points,counts=counts)
+                        if len(mps)>0:
                             break
                     else:
+                        self.manage_interval(mplast,mpcurr)
+                        '''
                         e1,t,e2,r = mpcurr[1:5]
 
                         if e1 == e1prev:
@@ -368,6 +626,7 @@ class fp(object):
                         else:
                             self.remove_interval(its,e2prev,its[e2prev].begin(),rprev)
                             self.remove_interval(its,e2,r,its[e2].end())
+                        '''
 
                 except Exception:
                         traceback.print_exc()
@@ -390,7 +649,7 @@ class fp(object):
                             distn = np.linalg.norm(mpn-self.p(edges[e1n],tn))
                             dist3 = float('inf')
                             for e3 in pe:
-                                distv = self.distanceIt(e3[0],mpn,its,edges)
+                                distv,_,_ = self.distanceIt(e3[0],mpn,its,edges)
                                 dist3 = min(dist3,distv[0])
 
 
@@ -418,160 +677,248 @@ class fp(object):
 
 
         return points
-    def distCheck(self,e1,t,e2,r,mp,edges,its,cnts,convex_vert):
+    def nextfp(self,mp,stepsize):
+        e1 = mp[1];t0=mp[2]
+        e2 = mp[3];r0=mp[4]
+        # first increment e1 by stepsize
+        t1 = min(self.its[e1].end(),t0+stepsize)
+        fp = []
+        dist = float('inf')
+        _,r1,fp= self.footprint(self.edges[e1],t1,self.edges[e2])
+        if r1 == -1:
+            r1 = max(r0-stepsize,self.its[e2].begin())
+            _,t1,fp= self.footprint(self.edges[e2],r1,self.edges[e1])
+            if t1!=-1:
+                dist = np.linalg.norm(self.p(self.edges[e2],r1)-fp)
+        else:
+            dist = np.linalg.norm(self.p(self.edges[e2],r1)-fp)
+        return [fp,e1,t1,e2,r1,dist]
+    def distCheckn(self,points):
+        if len(points) <2:
+            return []
+        # returns a set of footprints, which have equal distance
+        dist0 = points[-1][-1]
+        mp = points[-1][0]
+        pe = []
+        mindist = float('inf')
+        mps = []
+        e1 = points[-1][1];e2 = points[-1][3]
+        for k,_ in enumerate(self.edges):
+            if k==e1 or k==e2:
+                continue
+            dist,p1,ind,t = self.distanceItn(k,mp)
+            if dist < dist0:
+                pe.append(k)
+                if dist < mindist:
+                    mink = k
+                    mindist = dist
+        if len(pe) >0:
+            print "dist failure with ",pe
+            mpl = points.pop(-1)
+            for k in xrange(self.maxcount-1):
+                points.pop(-1)
+            points.append(mpl)
+
+            mps=self.retractn(points,mindist,mink,pe)
+        return mps
+    def retractn(self,points,mindist,mink,pe):
+        if len(points)<2:
+            return []
+        mps = []
+        e1 = points[-2][1]
+        tf = points[-2][2];rf = points[-2][4]
+        tl = points[-1][2];rl = points[-1][4]
+        e2 = points[-2][3]
+        dist = points[-1][-1]
+        assert e2 == points[-1][3] and e1 == points[-1][1]
+        count = 0
+        mindistn = mindist;distn = dist;fp = points[-1]
+        tn = tl
+        #print dist,mindist
+        while abs(mindistn-distn)>2.0  and count<20:
+            #print tf,tn,tl,distn,mindistn
+            count += 1
+            tn = (tf + tl)/2
+            _,rn,fp= self.footprint(self.edges[e1],tn,self.edges[e2])
+            if rn == -1:
+                rn = (rf + rl)/2
+                _,tn,fp= self.footprint(self.edges[e2],rn,self.edges[e1])
+            assert tn!=-1 and rn!=-1
+            mindistn,p1,e3,te3 = self.distanceItn(mink,fp)
+            distn = np.linalg.norm(self.p(self.edges[e1],tn)-fp)
+            if mindistn < distn:
+                tl = tn;rl = rn
+            else:
+                tf = tn;rf = rn
+        mpn = [fp,e1,tn,e2,rn,distn]
+        #print distn,mindistn,mink
+        if abs(mindistn-distn)<2.0:
+            points.pop(-1)
+            mp1 = [fp,e1,tn,mink,te3,distn]
+            mp2 = [fp,e2,rn,mink,te3,distn]
+            points.append(mpn)
+            mps.append(mp1);mps.append(mp2)
+            #check if other sides in pe also have same distn
+            for k in pe:
+                if k!= mink:
+                    dist0,p1,k,newt = self.distanceItn(k,fp)
+                    if abs(dist0-mindistn)<2.0:
+                        mps.append([fp,e1,tn,k,newt,distn])
+                        mps.append([fp,e2,rn,k,newt,distn])
+            return mps
+        elif mindistn <distn:
+            points.pop(-1)
+            return [points[-1]]
+        else:
+            points.pop(-1)
+            points.append(mpn)
+            return [mpn]
+    def trace(self,mplast,stepsize=0.05):
+        # mplast shall have two footprints
+        # get next mp
+        points = [mplast]
+        breakpoint = False
+        endofedge = False
+        count = 0
+        e1 = mplast[1];e2 = mplast[3];mpn = mplast
+        print "tracing ",e1,e2
+        mps = []
+        if self.its[e1].end()-self.its[e1].begin() <= 0.001:
+            breakpoint = True
+            #self.tracededges.append(e1);self.untracededges.remove(e1)
+        if self.its[e2].end()-self.its[e2].begin() <= 0.001:
+            breakpoint = True
+            #self.tracededges.append(e2);self.untracededges.remove(e2)
+        # distance check
+        # if fail-stop
+        # if convex_vert stop
+        # if curvature failure stop
+        # if edges change stop
+        while not breakpoint:
+            mpn = self.nextfp(mpn,stepsize)
+            if mpn[2]!=-1 and mpn[4]!=-1:
+            #print mpn
+                points.append(mpn)
+            else:
+                break
+            if mpn[2]==self.its[e1].end() or mpn[4] == self.its[e2].begin():
+                breakpoint = True
+            print len(points),e1,e2,count,self.maxcount
+            count += 1
+            if count == self.maxcount:
+                count = 0
+                mps = self.distCheckn(points)
+                #print mps
+                if len(mps)>0:
+                    breakpoint = True
+                if len(mps) == 1:
+                    mps = []
+                    breakpoint = False
+        mpn=points[-1]
+        r0 = mpn[4];t0=mpn[2]
+        if self.its[e1].end()-t0 <= 0.001:
+            endofedge = True
+            #self.tracededges.append(e1);self.untracededges.remove(e1)
+            e1 = self.nextedge(e1,self.cnts);t0 = 0.0
+        if r0-self.its[e2].begin() <= 0.001:
+            breakpoint=True
+            endofedge=True
+            e2 = self.prevedge(e2,self.cnts);r0=1.0
+            #self.tracededges.append(e2);self.untracededges.remove(e2)
+        '''
+        if endofedge == True:
+            _,r0,fp,_ = self.footprintItn(e1,t0,e2)
+            if r0==-1:
+                _,t0,fp,_ = self.footprintItn(e2,r0,e1)
+            if r0!=-1 and t0!=-1:
+                mps.append([fp,e1,t0,e2,r0,np.linalg.norm(fp-self.p(self.edges[e1],t0))])
+        '''
+        if len(points) >0:
+            rl = mplast[4];tf = mplast[2]
+            rf = points[-1][4];tl = points[-1][2]
+            self.its[e1].chop(tf,tl);self.its[e2].chop(rf,rl)
+        return mps,points
+    def test(self):
+        mps = []
+        points = []
+        for cv in self.convex_vert:
+            mps.append([self.vertices[cv],cv,0.0,self.prevedge(cv,self.cnts),1.0,0.0])
+        while len(mps) > 0:
+            mp = mps.pop(-1)
+            mpsn,pts = self.trace(mp)
+            points = points + pts
+            mps = mps + mpsn
+        eds = []
+        for point in points:
+            eds.append([point[0]])
+        return eds,self.edges
+    def test1(self,points):
+        mps = []
+        for cv in self.convex_vert:
+            mps.append([self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0])
+        while len(mps) > 0:
+            mp = mps.pop(-1)
+            pts = self.iterate(mp[1],mp[2],mp[3],mp[4],mp,points,0.001,500)
+            print len(points)
+
+        return points,self.edges
+    def distCheck(self,e1,t,e2,r,mp):
 
         #r is not used at all
-        dist = np.linalg.norm(self.p(edges[e1],t)-mp)
+        dist = np.linalg.norm(self.p(self.edges[e1],t)-mp)
         pe = []
         mindist3 = float('inf')
         mink = -1
-        for k,_ in enumerate(edges):
-            if k in self.friends(e1,cnts,convex_vert) or k in self.friends(e2,cnts,convex_vert):
+        for k,_ in enumerate(self.edges):
+            #if k in self.friends(e1,cnts,convex_vert) or k in self.friends(e2,cnts,convex_vert):
+            if k==e1 or k==e2:
             #or k==self.nextedge(e1,cnts) or k==self.prevedge(e2,cnts) or k==self.prevedge(e1,cnts) or k==self.prevedge(e2,cnts):
             # or k in tracededges:
                 continue
-            dist3,p,t = self.distanceIt(k,mp,its,edges)
+            dist3,p,t = self.distanceIt(k,mp)
+            #dist3,p,t = self.distance(self.edges[k],mp)
+
+
             #print k,dist3,dist,t
-            if dist3 <dist-1.0:
+            if dist3 <dist:
                 pe.append([k,dist3,t])
                 if dist3<mindist3:
                     mink = k
                     mindist3 = dist3
         return pe,mindist3,mink,dist
-    def retract(self,mpcurr,mplast,edges,its,pe,cnts,convex_vert):
-           e1 = mpcurr[1]
-           tl = mpcurr[2]
-           e2 = mpcurr[3]
-           rl = mpcurr[4]
-           dist= mpcurr[-1]
-           tn = tl
-           rn = rl
-           # TODO: if mpcurr and mplast belongs to different edges
-           if mpcurr[3]!=mplast[3]:#both e2s are not same
-              e21 = mplast[3]
-              e22 = mpcurr[3]
-              e12 = mpcurr[1]
-              e11 = mplast[1]
-              _,t1,mp1,_ = self.footprintIt(edges[e22],its[e22].end()-0.001,edges[e12],its[e22],its[e12])
-              if t1==-1:
-                   _,t1,mp1,_ = self.footprintIt(edges[e21],its[e21].begin(),edges[e11],its[e22],its[e11])
-                   if t1==-1:
-                        _,t1,mp1,_ = self.footprintIt(edges[e21],its[e21].begin(),edges[e12],its[e22],its[e12])
-              # distancecheck here
-              pe1,dist30,mink,dist = self.distCheck(e12,t1,e22,its[e22].end()-0.001,mp1,edges,its,cnts,convex_vert)
-              if len(pe1)>0:
-                  #failed
-                  #last e2 is not feasible with e1 so maybe return the
-
-                  pes = {}
-                  dist3 = float('inf')
-                  _,t1,mp1,_ = self.footprintIt(edges[e21],its[e21].begin(),edges[e12],its[e21],its[e12])
-                  e1 = e12
-                  if t1==-1:
-                      _,t1,mp1,_ = self.footprintIt(edges[e21],its[e21].begin(),edges[e11],its[e21],its[e11])
-                      e1= e11
-                  if t1==-1:
-                      print "bug here at line#465"
-                      return
-                  dist = np.linalg.norm(mp1-self.p(edges[e1],t1))
-                  mpfn = [mp1,e1,t1,e21,its[e21].beign(),dist]
-
-
-                  for (e3,_,_) in pe:
-                      dist1,pind,tind = self.distanceIt(e3,mpfn[0],its,edges)
-                      #print dist1
-                      pes = {}
-                      if dist1<mpfn[-1]:
-                          #print e3
-                          pes[e3] = [dist1,pind,tind]
-                      dist3 = min(dist3,dist1)
-                  return mpfn,pes
-
-                  '''
-                  _,t1,mp1,_ = self.footprintIt(edges[e21],its[e21].begin(),edges[e11],its[e21],its[e11])
-                  if t1!=-1:
-                      dist = np.linalg.norm(mp1-self.p(edges[e11],t1))
-                      mpcurr = [mp1,e11,t1,e21,0.0,dist]
-                  else:
-                      print "error here check footprint of ",e21,its[e21].begin(),e11
-                      return
-                  #dist3 = self.distance(edge[mink],mp1)
-                  '''
-              else:
-                  mplast = [mp1,e12,t1,e22,1.0,dist]
-           elif mpcurr[1] == mplast[1]:#both e1s same and both e2s same
-               tf = mplast[2]
-           else:
-               #both e2s are same
-                   #first try if beginning of current edge distance check is violated
-                   #if not change tf to beginning of current edge
-                   # if distance check is violated then make tl end of previous edge
-                   _,r0,mp0,_ = self.footprintIt(edges[mpcurr[1]],0.0,edges[mpcurr[3]],its[mpcurr[1]],its[mpcurr[3]])
-                   if r0 !=-1:
-                       pe1,dist30,mink,dist = self.distCheck(mpcurr[1],0.0,mpcurr[3],r0,mp0,edges,its,cnts,convex_vert)
-                       if len(pe1)>0:
-                           '''
-                           e1 = mplast[1]
-                           e2 = mplast[3]
-                           _,r1,mp1,_ = self.footprintIt(edges[e1],1.0,edges[e2],its[e1],its[e2])
-                           if r1!=-1:
-                               tl = 1.0
-                               dist = np.linalg.norm(self.p(edges[e1],1.0)-mp1)
-                               mpcurr = [mp1,e1,1.0,e2,r1,dist]
-                               #dist3 = self.distance(edges[mink],mp1)
-                           else:
-                               print "error in retract",mplast,mpcurr
-                          '''
-                       else:
-                           #dist3 = dist30
-                           mplast = [mp0,e1,0.0,e2,r0,dist]
-                           #tf = 0.0
-
-
-
-
-
-                   else:
-                       print "error in retracting",mpcurr,mplast
-                       tf = its[e1].begin()
+    def retract(self,mpcurr,mplast,mink,mindist):
+           print "retract begin mplast,mpcurr ",mplast,mpcurr
            count = -1
            pes ={} # to store footprints
            e1 = mpcurr[1]
            tl = mpcurr[2]
            e2 = mpcurr[3]
            rl = mpcurr[4]
+           e11 = mplast[1];e21=mplast[3]
            dist= mpcurr[-1]
            tn = tl
            rn = rl
-           dist3 = float('Inf')
+           distk,_,_ = self.distance(self.edges[mink],mpcurr[0])
            tf = mplast[2]
-
-
-           while abs(dist3-dist)>1.0 and abs(tf-tl)>0.001 and count < 20:
+           mpn = mplast[0]
+           while abs(distk-dist)>2.0  and count < 20:
                 count += 1
                 tn = (tf + tl)/2.0
-                _,rn,mpn,x = self.footprintIt(edges[e1],tn,edges[e2],its[e1],its[e2],-1)
+                _,rn,mpn,x = self.footprintIt(e1,tn,e2)
 
                 #print "rn =",rn
-                if rn == -1: # it should not happen
-                    print "possible bug in retract or footprint ",e1,e2,mplast,mpcurr
-                    #return tn,rn,-1
-                    break
+                if rn == -1:
+                    #check if there are two values of e2
+                    if e2!=e21:
+                        _,rn,mpn,x = self.footprintIt(e1,tn,e21)
+                    else:# it should not happen
+                        print "possible bug in retract or footprint ",e1,tn,e2,mplast,mpcurr
+                        #return tn,rn,-1
+                        break
                 else:
-                    dist = np.linalg.norm(mpn-self.p(edges[e1],tn))
-                    dist3 = float('Inf')
-
-                    for (e3,_,_) in pe:
-                        dist1,pind,tind = self.distanceIt(e3,mpn,its,edges)
-                        #print dist1
-                        pes = {}
-                        if dist1<dist:
-                            #print e3
-                            pes[e3] = [dist1,pind,tind]
-                        dist3 = min(dist3,dist1)
-                    print tf,tn,tl,rn,dist3,dist,mpn
-
-                    if dist3 < dist:
+                    dist = np.linalg.norm(mpn-self.p(self.edges[e1],tn))
+                    distk,_,_ = self.distance(self.edges[mink],mpn)
+                    if distk < dist:
                         tl = tn
                     else:
                         tf = tn
@@ -580,25 +927,45 @@ class fp(object):
                 mpfn = [mpn,e1,tn,e2,rn,dist]
            else:
                mpfn = mpcurr
-           if dist3<dist and abs(dist3-dist)>1.0:
-               print "possible bug in retraction, new dist difference is ",abs(dist3-dist),mpcurr,mplast
+           if abs(distk-dist)>2.0:
+               print "possible bug in retraction, new dist difference is ",abs(distk-dist),mpcurr,mplast
+           mps = []
+           #mps.append([mpfn[0],mink,])
+           for i,_ in enumerate(self.edges):
+               if i==mpfn[1] or i==mpfn[3]:
+                   continue
+               disti,fpi,ti = self.distanceIt(i,mpn)
+               if abs(disti-distk)<2.0:
+                   mpfn1 = [mpn,i,ti,mpfn[1],mpfn[2],disti]
+                   mpfn2 = [mpn,i,ti,mpfn[3],mpfn[4],disti]
+                   mps.append(mpfn1);mps.append(mpfn2)
+
+
+
                #return tn,rn,-1
-           return mpfn,pes
+           mps.append(mpfn)
+           self.manage_interval(mplast,mpfn)
+           return mps
     def modEdges(self,letter):
-        edges,vertices,vert_edges,cnts = check.fontOutline(letter)
-        convex_vert,concave_vert = self.vertAnalyse(vertices,edges,cnts)
-        its = {} # store as interval tree
-        for k in xrange(len(edges)+len(concave_vert)):
-            its[k]=iv(0.0,1.001)
-        its = self.insertReflex(edges,vertices,cnts,concave_vert,its)
-        for k in xrange(len(edges)):
-            its[k] = it([its[k]])
-        convex_vert,concave_vert = self.vertAnalyse(vertices,edges,cnts)
-        return edges,its,cnts,vertices,convex_vert,concave_vert
+        self.edges,self.vertices,self.vert_edges,self.cnts = check.fontOutline(letter)
+        self.vertAnalyse()
+        self.its = {} # store as interval tree
+        for k in xrange(len(self.edges)+len(self.concave_vert)):
+            self.its[k]=iv(0.0,1.001)
+        #its =
+        self.insertReflex()
+        for k in xrange(len(self.edges)):
+            self.its[k] = it([self.its[k]])
+        self.vertAnalyse()
+        return self.edges,self.its,self.cnts,self.vertices,self.convex_vert,self.concave_vert
     def remove_interval(self,its,e1,t0,tn):
         its[e1].chop(t0,tn)
-
-    def footprint(self,quad1,t,quad2,initialr=-1,diagnostics=False):
+    #def manage_interval(self,e11,tf,)
+    def footprintn(self,quad1,t,quad2,initialr=-1,diagnostics=False):
+        if initialr == -1:
+            r = 0.5
+        else:
+            r = initialr
         edges = []
         p1 = self.p(quad1,t)
         p1prime = self.pprime(quad1,t)
@@ -609,97 +976,165 @@ class fp(object):
         #print np.linalg.norm(p1prime)
 
 
-        if initialr <0:
-            _,_,r = self.distance(quad2,p1)
-        else:
-            r = initialr
-        #print r
-        if r==-1:
-            r = 0.5
-        result = False
         for count in xrange(100):
-            if r != -1 and r>=0.0 and r<=1.0:
                 p2 = self.p(quad2,r)
                 p2prime = self.pprime(quad2,r)
                 normal2 = np.array([p2prime[1],-1*p2prime[0]])
-                #edges.append([p2])
+                edges.append([p2])
                 edges.append([p2,p2+normal2*50/np.linalg.norm(normal2)])
 
                 denominator = np.dot(normal1,p2prime)
                 if abs(denominator) > 0.01 :
                     alpha = np.dot(p2-p1,p2prime)/denominator
                     beta = np.dot(p2-p1,p1prime)/denominator
+                else: #parallel found
+                    alpha = beta = np.linalg.norm(p1-p2)/2.0
+                    alpha = alpha/np.linalg.norm(p1prime)
+                    beta = beta/np.linalg.norm(p2prime)
+                r,result = self.solve1(quad1,t,quad2,r,1.0)
+                #print r
+                if result:
+                    break
+        if result and alpha>=0 and beta>=0 :
+            edges.append([p2,p2+normal2*50/np.linalg.norm(normal2)])
+            edges.append([p1,p1 + alpha*normal1])
+            edges.append([p2,p2 + beta*normal2])
+
+
+
+            return edges,r,p1+alpha*normal1
+        else:
+
+            return edges,-1,None
+
+
+
+    def footprinto(self,quad1,t,quad2,initialr=-1,diagnostics=False):
+        edges = []
+        p1 = self.p(quad1,t)
+        p1prime = self.pprime(quad1,t)
+        normal1 = np.array([p1prime[1],-1*p1prime[0]])
+
+        #edges.append([p1])
+        #edges.append([p1,p1+p1prime*50/np.linalg.norm(p1prime)])
+        #print np.linalg.norm(p1prime)
+
+
+        if initialr <0:
+            dist,_,r = self.distance(quad2,p1)
+            p2 = self.p(quad2,r)
+
+            p2prime = self.pprime(quad2,r)
+            denominator = np.dot(normal1,p2prime)
+            print "initial denominator is ",denominator
+            if abs(denominator)>0.01:# not horizontal
+               #fp = p1 + normal1/np.linalg.norm(normal1)*dist
+               #distn,_,rn = self.distance(quad2,fp)
+               r = 1-r
+
+
+
+        else:
+            r = initialr
+        print "initial values",r,dist
+        if r==-1:
+            r = 0.5
+        result = False
+        for count in xrange(100):
+            if  r != -1 and r>=0.0 and r<=1.0:
+                p2 = self.p(quad2,r)
+                p2prime = self.pprime(quad2,r)
+                normal2 = np.array([p2prime[1],-1*p2prime[0]])
+                #edges.append([p2])
+                #edges.append([p2,p2+normal2*50/np.linalg.norm(normal2)])
+
+                denominator = np.dot(normal1,p2prime)
+                print "denominator is ",denominator
+                if abs(denominator) > 0.01 :
+                    alpha = np.dot(p2-p1,p2prime)/denominator
+                    beta = np.dot(p2-p1,p1prime)/denominator
+
                     #print alpha>0,beta>0
 
 
 
                 else: #parallel found
+                    print "parallels"
                     alpha = beta = np.linalg.norm(p1-p2)/2.0
                     alpha = alpha/np.linalg.norm(p1prime)
                     beta = beta/np.linalg.norm(p2prime)
+                    #print alpha,beta
 
 
 
 
                 r,result = self.solve(quad1,t,quad2,r)
-            #    print r
+                print r
                 if result:
                     break
         if result and alpha>=0 and beta>=0 :
+            print alpha,beta
             #edges.append([p2,p2+normal2*50/np.linalg.norm(normal2)])
+            edges.append([p1 + alpha*normal1])
+            edges.append([p2 + beta*normal2])
+
             edges.append([p1,p1 + alpha*normal1])
             edges.append([p2,p2 + beta*normal2])
 
 
 
             if diagnostics:
-                return edges,r,p1 + alpha*normal1,t,r
+                return edges,r,p2 + beta*normal2,t,r
             else:
-                return edges,r,p1+alpha*normal1
+                return edges,r,p2+beta*normal2
         else:
             if diagnostics:
                 return edges,-1,None,t,r
             else:
                 return edges,-1,None
-    def footprintIt(self,quad1,t,quad2,it1,it2,initialr=-1,diagnostics=False):#using interval tree
-        if( it1.search(t) == set()):
+    def footprintItn(self,e1,t,e2,initialr=-1):#using interval tree
+        if( self.its[e1].search(t) == set()):
             return [],-1,[],None
-        if diagnostics:
-            e,r,mp,tfin,rfin = self.footprint(quad1,t,quad2,initialr,diagnostics)
-        else:
-            e,r,mp = self.footprint(quad1,t,quad2,initialr,False)
-
-
-
-        #print "line 263:r is",r
+        e,r,mp = self.footprint(self.edges[e1],t,self.edges[e2],initialr)
         x = it2.search(r)
-        #y = it2.search(r)
-
         if x!=set():
             assert len(x) == 1 # if not then we have not managed intervals better
-            if diagnostics:
-                return e,r,mp,x,tfin,rfin
-            else:
-                return e,r,mp,x
+            return e,r,mp,x
         else:
-            print x,r,"in footprint it",it2
+            return e,-1,[],None
 
-            if diagnostics:
-                return e,-1,[],None,tfin,rfin
-            else:
-                return e,-1,[],None
+    def footprintIt(self,e1,t,e2,initialr=-1):#using interval tree
+        quad1=self.edges[e1];quad2=self.edges[e2];it1=self.its[e1];it2=self.its[e2]
+        if( it1.search(t) == set()):
+            return [],-1,[],None
+
+        e,r,mp = self.footprint(quad1,t,quad2,initialr)
+        #print "line 1057:r is",r
+        x = it2.search(r)
+        #y = it2.search(r)
+        if x!=set():
+            assert len(x) == 1 # if not then we have not managed intervals better
+            return e,r,mp,x
+        else:
+            return e,-1,[],None
 
 
     def bezIntersect(self,bez1,bez2):
         return
-    def bisector(self,quad1,quad2):
+    def bisector(self,quad1,quad2,counts=100):
         finedges = []
         points = []
-        for q in xrange(101):
-            t = q/100.0
+        for q in xrange(counts+1):
+            t = q/(counts*1.0)
             edges,r,point = self.footprint(quad1,t,quad2)
-            if r!=-1:
-                print t,r
+            #r,edges = self.solve2(quad1,t,quad2)
+            #point = edges[0][0]
+            #print "t=,r=",t,r
+
+
+            if r>=0 and r<=1.0:
+                print "t=,r=",t,r
+
 
                 finedges +=  edges
                 points.append(point)
@@ -726,16 +1161,16 @@ class fp(object):
 
 
        return mp,newt
-    def nextedge(self,e,cnts): #gives the next edge given an index of edge
-       for cnt in cnts:
+    def nextedge(self,e): #gives the next edge given an index of edge
+       for cnt in self.cnts:
            for i,pt in enumerate(cnt):
                if pt == e:
                    if i <len(cnt)-1:
                        return cnt[i + 1]
                    else:
                        return cnt[0]
-    def prevedge(self,e,cnts): #gives the next edge given an index of edge
-       for cnt in cnts:
+    def prevedge(self,e): #gives the next edge given an index of edge
+       for cnt in self.cnts:
            for i,c in enumerate(cnt):
                if c == e:
                    return cnt[i-1]
@@ -763,355 +1198,6 @@ class fp(object):
                 store these points and convert as bezier curve and store
         '''
         return
-    def medialaxis(self,edges1,vertices1,vert_edges1,cnts1,stepsize=0.05):
-
-        def distance(ind,p0,its,edges):#distance between a point and p
-           quad = edges[ind]
-           pdprime = 2*(quad[2]+quad[0]-2*quad[1])
-           t=t0 = its[ind].begin()
-           tf = its[ind].end()
-           result = False
-           for j in xrange(100): # maximum 100 iterations
-                #print t
-                val = np.dot(self.pprime(quad,t),self.p(quad,t)-p0)
-                if val>=0 and abs(val) <= 0.01:
-                    result = True
-                    break
-                else:
-                    fprime = np.linalg.norm(self.pprime(quad,t))**2 + np.dot(pdprime,self.p(quad,t)-p0)
-                    t = t - val/fprime
-                    if t<t0 or t>tf:
-                        t = random.uniform(t0,tf)
-           if result:
-               p1 = self.p(quad,t)
-               p1prime = self.pprime(quad,t)
-               if np.cross(p0-p1,p1prime) >=0: # point is on right side of the side
-                    return np.linalg.norm(p1-p0),p1,t
-
-
-           return float("inf"),[],-1
-        def reflexVertexOld(i):
-            quad = []
-            linked_edges = vert_edges[i]
-            pt = vertices[i]
-
-            if len(linked_edges) ==2:
-                linked_edges.sort()
-                quad.append(self.p(edges[linked_edges[0]],0.99))
-                quad.append(pt)
-
-                quad.append(self.p(edges[linked_edges[1]],0.01))
-                return quad
-            else:
-                quad.append(self.p(edges[-1],0.99))
-                quad.append(pt)
-
-                quad.append(self.p(edges[linked_edges[0]],0.01))
-            return quad
-        def reflexVertex(i): # store as normals
-            e1 = vert_edges[i][0]
-            if len(vert_edges[i]) ==1:
-                e2 = len(edges) -1
-            else:
-                e1 = vert_edges[i][1]
-            p1prime = self.pprime(edges[e1],1.0)
-            n1 = np.array([p1prime[1],-1*p1prime[0]])
-            p2prime = self.pprime(edges[e2],1.0)
-            n2 = np.array([p2prime[1],-1*p2prime[0]])
-            return np.array([n1,n2])
-        def remove_interval(its,e1,t0,tn):
-            its[e1].slice(t0)
-            its[e1].slice(tn)
-            its[e1].remove_overlap(t0,tn)
-        def retract(simpleedge,mpcurrent,mpdistl,e3,dist3,edges,its):
-               e1 = mpdistl[1]
-               e2 = mpdistl[3]
-               rf = mpdistl[4]
-               tf = mpdistl[2]
-               rl = mpcurrent[4]
-               tl = mpcurrent[2]
-               assert e1 == mpcurrent[1]
-               assert e2 == mpcurrent[3]
-               dist = mpcurrent[-1] # current dist which needs to be reduced
-               #print mpdistl
-               #print mpcurrent
-               #print "before retract distance from edges e1,e2,e3",dist,dist3,tf,tl
-               #print simpleedge
-               simpleedge.pop(-1)
-               count = 0
-               rn = rl
-               tn = tl
-               mpn = mpcurrent[0]
-
-
-               while abs(dist3-dist)>1.0 and count < 10:
-                    count += 1
-                    tn = (tf + tl)/2.0
-                    #print tf,tn,tl,rl,dist3,dist
-                    _,rn,mpn,x = self.footprintIt(edges[e1],tn,edges[e2],its[e1],its[e2])
-                    #print "rn =",rn
-                    if rn == -1: # it should not happen
-                        print "possible bug in retract or footprint ",e1,e2
-                        return tn,rn,-1
-                        break
-                    else:
-                        dist3,pind,tind = distance(e3,mpn,its,edges)
-                        #dist3o,_,_ = self.distance(edges[e3],mpn)
-                        #print dist3o,dist3
-                        #assert abs(dist3o-dist3) < 1.0
-
-                        dist = np.linalg.norm(mpn-self.p(edges[e1],tn))
-                        #diste2 = np.linalg.norm(mpn-self.p(edges[e2],rn))
-                        #print "diste1,diste2",diste1,diste2
-                        #dist = max(diste1,diste2)
-
-                        if dist3 < dist:
-                            tl = tn
-                        else:
-                            tf = tn
-
-               if rn!=-1:
-                    mpfn = np.array([mpn,e1,tn,e2,rn,dist])
-                    simpleedge.append(mpfn)
-                    #t0 = simpleedge[0][2]
-                    #r2 = simpleedge[0][4]
-                    #remove_interval(its,e1,t0,tn)
-                    #remove_interval(its,e2,rn,r2)
-                    #print "after retract distance from edges e1,e2,e3",dist,dist3
-                    #print simpleedge
-               if count ==10 and abs(dist3-dist)>1.0:
-                   print "possible bug in retraction, new dist difference is ",abs(dist3-dist)
-                   return tn,rn,-1
-               else:
-                   return tn,rn,0
-        def hp(e1,e2,simpleedge,maxis,mpl,its):
-            if e1 == e2:
-                return
-            #get overlap intervals
-            # start incrementing e1
-            # after three increments,
-            #distance check
-            # if distance fail, retract and proceed to new pairs
-            global count
-            print "handling ",e1,e2
-            print its[e1],its[e2]
-            breakpoint = False
-            success = False
-            #print mpl
-            for interval_obj in its[e1]:
-                if interval_obj.end-interval_obj.begin <=.01:
-                    continue
-                print "interval is ",interval_obj
-                t1 = interval_obj.begin
-                #print t1
-                _,r2,mp1,x=self.footprintIt(edges[e1],t1,edges[e2],its[e1],its[e2],initialr=-1)
-                #print "r2 is ",r2
-                success = False
-                if r2==-1: # fail, now we shall try e2
-                    # let us try t2 as end of  interval
-                     t2 = interval_obj.end - 0.0001
-                     _,r1,mp2,x1 =self.footprintIt(edges[e1],t2,edges[e1],its[e2],its[e1],initialr=-1)
-                     if r1 == -1:
-                         # we have to rule out if any e2 interval is totally inside the interval or not
-                         print "may overlap "
-                     else: #found the interval of e2
-                         r2 = [y.end for y in x1]
-                         r2 = r2[0]
-                         success = True
-
-                else: # we have found t1
-                   #let us try t2 as last of current e1 interval
-                   success = True
-                   t2 = interval_obj.end - 0.0001
-                 #  print "line 523:t2 is ",t2
-                   _,r1,mp2,x1 =self.footprintIt(edges[e1],t2,edges[e2],its[e1],its[e2],initialr=-1)
-                  # print "line 525: r1 is",r1
-                   if r1 == -1:
-                       # e2 interval is smaller
-                       # r1 = x begin
-                       r1 = [y.begin for y in x]
-                       r1 = r1[0]
-                    #   print "line 535:r1 is",r1
-                       #we need to find t2
-                       _,t2,mp2,x2 =self.footprintIt(edges[e2],r1,edges[e1],its[e2],its[e1],initialr=-1)
-
-
-
-
-
-                if success:
-                    break
-            if not success:
-                print "checking from e2 side"
-                for interval_obj in its[e2]:
-                    if interval_obj.end-interval_obj.begin<0.01:
-                        continue
-                    r2 = interval_obj.end-0.001
-                    _,t1,mp1,x=self.footprintIt(edges[e2],r2,edges[e1],its[e2],its[e1],initialr=-1)
-                    if t1!=-1:
-                        r1 = interval_obj.begin
-                        _,t2,mp2,x=self.footprintIt(edges[e2],r1,edges[e1],its[e2],its[e1],initialr=-1)
-                        success = True
-                        break
-
-
-
-
-                return #nothing to be done
-            if not success:
-                #hp(e1,self.prevedge(e2,cnts),simpleedge,maxis,[],its)
-
-                return
-            else:
-                # we have found first footprint
-                print "t1,t2,r1,r2",t1,t2,r1,r2
-                mpcurrent = np.array([mp1,e1,t1,e2,r2,np.linalg.norm(self.p(edges[e1],t1))])
-                simpleedge.append(mpcurrent)
-                print count,e1,e2
-                count +=1
-                distFailure = False
-                t = t1
-                noofsteps = 0
-                dist = mpcurrent[-1]
-                mpdistl = mpcurrent
-                nextpairs = []
-                while t<t2 and not distFailure:
-                    t = min(t2,t + deltat)
-                    _,r,mpcurrent1,_=self.footprintIt(edges[e1],t,edges[e2],its[e1],its[e2],initialr=-1)
-                    noofsteps += 1
-                    #count +=1
-                    if r==-1:
-                        print "let's investigate",e1,t,e2
-                        break
-                    mpcurrent = np.array([mpcurrent1,e1,t,e2,r,np.linalg.norm(mpcurrent1-self.p(edges[e1],t))])
-                    simpleedge.append(mpcurrent)
-
-                    #print mpcurrent
-                    dist = mpcurrent[-1]
-                    #print dist,noofsteps,t
-                    if True or noofsteps >= maxnoofsteps:
-                        possibleedges = []
-                        noofsteps=0
-                        for ind,_ in enumerate(edges):
-                            if ind == e1 or ind == e2:
-                                continue
-
-                            dist1,pind,tind = distance(ind,mpcurrent[0],its,edges)
-                            #print dist,dist1,e1,e2,ind
-
-                            if dist1 <= dist: # found a third edge
-                                 #TODO retract mp and delete additional points
-                                 #retract(simpleedge,mp,)
-                                 #print "line 584:",dist1,dist,e1,ind,mpcurrent,mpdistl
-                                 #return
-                                 print "distance failure of e1,e2,ind",e1,e2,ind,dist1,dist
-                                 tn,rn,retractval=retract(simpleedge,mpcurrent,mpdistl,ind,dist1,edges,its)
-                                 if retractval==-1:
-                                     print "line 588:",dist1,dist,e1,ind,mpcurrent,mpdistl
-                                     #return
-
-
-
-                                 #return
-                                 possibleedges.append(ind)
-                                 #print dist,dist1,ind,tind
-                                 break
-                        if len(possibleedges)>0:
-
-                            distFailure = True
-                            maxis.append(simpleedge)
-                            simpleedge = []
-                            for ind in possibleedges:
-                                nextpairs.append([ind,e1,copy.copy(mpl)])
-                                nextpairs.append([ind,e2,copy.copy(mpl)])
-                        mpdistl = copy.copy(mpcurrent)
-                #print t1,t2,r1,r2
-                if not distFailure:
-                    if len(simpleedge)>0:
-                        maxis.append(simpleedge)
-                    simpleedge=[]
-                    remove_interval(its,e1,t1,t2)
-                    remove_interval(its,e2,r1,r2)
-                    if its[e1].is_empty():
-                        if not its[e2].is_empty():
-                            nextpairs.append([self.nextedge(e1,cnts),e2,mpcurrent[0]])
-                        else:
-                            nextpairs.append([self.nextedge(e1,cnts),self.prevedge(e2,cnts),mpcurrent[0]])
-                    else:
-                        nextpairs.append([e1,self.prevedge(e2,cnts),mpcurrent[0]])
-
-
-
-                    #nextpairs.append([e1,self.prevedge(e2,cnts),mpcurrent[0]])
-                    #nextpairs.append([self.nextedge(e1,cnts),self.prevedge(e2,cnts),mpcurrent[0]])
-                    #
-
-                else:
-                        print tn,rn
-                        remove_interval(its,e1,t1,tn)
-                        remove_interval(its,e2,rn,r2)
-                print its[e1],its[e2]
-
-
-
-
-                for pair in nextpairs:
-                    hp(pair[0],pair[1],simpleedge,maxis,pair[2],its)
-                    #print "we shall do it later",pair[0],pair[1]
-                return
-
-        maxnoofsteps = 3
-        cnts = copy.copy(cnts1)
-        edges = copy.copy(edges1)
-        vertices = copy.copy(vertices1)
-        vert_edges = copy.copy(vert_edges1)
-        convex_vert,concave_vert = self.vertAnalyse(vertices,edges,cnts)
-        len(edges)
-        print convex_vert,concave_vert
-        its = {} # store as interval tree
-        for k in xrange(len(edges)+len(concave_vert)):
-            its[k]=iv(0.0,1.0)
-
-
-        its = self.insertReflex(edges,vertices,cnts,concave_vert,its)
-        for k in xrange(len(edges)):
-            its[k] = it([its[k]])
-        convex_vert,concave_vert = self.vertAnalyse(vertices,edges,cnts)
-        print convex_vert,concave_vert,its
-        len(edges)
-        #return
-
-
-
-
-
-        maxis = []
-        simpleedge =[]
-        count = 0
-        edge_count = len(edges) -1
-        deltat = stepsize
-        alledges = []
-        tracededges = []
-        print cnts
-        #handlePair(0,17,simpleedge,maxis,vertices[0])
-
-        for cvert in convex_vert:
-            firstvertex = cvert
-
-            secondedge = self.prevedge(firstvertex,cnts)
-            firstedge = firstvertex
-            #lastts[firstedge][0] = 0.0
-
-            mp = [vertices[firstvertex],firstedge,0.0,secondedge,1.0]
-
-            #print firstedge,secondedge
-            nextpairs = hp(firstedge,secondedge,simpleedge,maxis,mp,its)
-            #break
-
-            #print nextpairs
-
-
-        return maxis,edges
     def printMa(self,ma):
         points = []
         for k,ed in enumerate(ma):
@@ -1120,33 +1206,22 @@ class fp(object):
                     if len(point)>0:
                         points.append([point[0]])
         return points
-    def fillPointsAtCorner(self,edge1,edge2,dist):
-        slope1 = self.pprime(edge1,1)
-        slope2 = self.pprime(edge2,0)
-        normal1 = np.array([slope1[1],-1*slope1[0]])
-        normal2 = np.array([slope2[1],-1*slope2[0]])
-        pts = []
-        for q in xrange(11):
-            t = q/10.0
-            normal = normal1*(1-t) + normal2 * t
-            pts.append(edge1[-1] +normal*dist/np.linalg.norm(normal1) )
-        return pts
-    def vertAnalyse(self,vertices,edges,cnts):
-        concave_vert = []
-        convex_vert = []
-        print len(vertices),len(edges)
-        for i,_ in enumerate(vertices):
-            j = self.prevedge(i,cnts)
-            cross = np.cross(self.pprime(edges[i],0.0),self.pprime(edges[j],1.0))
+    def vertAnalyse(self):
+        self.concave_vert = []
+        self.convex_vert = []
+        print len(self.vertices),len(self.edges)
+        for i,_ in enumerate(self.vertices):
+            j = self.prevedge(i)
+            cross = np.cross(self.pprime(self.edges[i],0.0),self.pprime(self.edges[j],1.0))
             #print i,j,cross
 
             if cross>0.01:
                 #print "convex"
-                convex_vert.append(i)
+                self.convex_vert.append(i)
             elif cross<-0.01:
                 #print "concave"
-                concave_vert.append(i)
-        return convex_vert,concave_vert
+                self.concave_vert.append(i)
+        return self.convex_vert,self.concave_vert
 
 
     def radiusCurvature(self,quad,t):
@@ -1181,25 +1256,3 @@ class fp(object):
 
 
         return 1
-    def test(self,letter,stepsize=0.05):
-        edges,vertices,vert_edges,cnts = check.fontOutline(letter)
-        maa,mod = self.medialaxis(edges,vertices,vert_edges,cnts,stepsize)
-        eda = self.printMa(maa)
-        check.printEdges(mod)
-        check.printEdges(mod+eda,0,False)
-        return maa,mod,eda
-    def test1(self,quad1,quad2):
-        edges =[]
-        for q in xrange(11):
-            t = q/10.0
-            p1 = self.p(quad1,t)
-            p2 = self.p(quad2,t)
-            p1prime = self.pprime(quad1,t)
-            p2prime = self.pprime(quad2,t)
-            n1 = np.array([p1prime[1],-1*p1prime[0]])
-            n2 = np.array([p2prime[1],-1*p2prime[0]])
-            n = n2 - np.dot(p2,n2)/np.dot(p1,n1)*n1
-            edges.append([p1+n])
-            #edges.append([p2+n])
-        c= pg3.Check()
-        c.printEdges(edges+[quad1,quad2],0,False)
