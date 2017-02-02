@@ -66,9 +66,11 @@ class fp(object):
             return quad[0]
     def pprime(self,quad,t):
         if len(quad) == 1:
-            return
+            return []
         return 2*((quad[1]-quad[0])*(1-t) + (quad[2]-quad[1])*t)
     def normal(self,quad,t,unit=False):
+        if len(quad)==1:
+            return []
         pp = self.pprime(quad,t)
         n0 = np.array([pp[1],-1*pp[0]])
         if unit:
@@ -170,19 +172,15 @@ class fp(object):
                return float("inf"),[],-1
     def manage_interval(self,mplast,mpcurr):
         assert mplast[1]==mpcurr[1] and mplast[3]==mpcurr[3]
-        print "now managing interval of",mplast,mpcurr
-        if mplast[3]==31:
-            print self.its[17]
+        if self.debug: print "now managing interval of",mplast,mpcurr
         self.its[mplast[1]].chop(mplast[2],mpcurr[2])
         self.its[mplast[3]].chop(mpcurr[4],mplast[4])
-        if mplast[3]==31:
-            print self.its[17]
 
     def nextt(self,e1,t,e2,stepsize=0.05):
         #print "now in nextt"
         iv1 = sorted(self.its[e1].search(t))
         if len(iv1) == 0:
-            print "not found t",t," in",self.its[e1]
+            if self.debug: print "not found t",t," in",self.its[e1]
             return -1,-1
 
         elif t+stepsize <= iv1[-1].end-0.001:
@@ -195,13 +193,13 @@ class fp(object):
             for k,iv0 in enumerate(q1):
                 if t>=iv0.begin and t<=iv0.end:
                     if k!=len(q1)-1:
-                        print "this happened in nextt"
+                        if self.debug: print "this happened in nextt"
                         return e1,q1[k+1].begin
             preve1 = e1
             e1 = self.nextedge(e1)
             if e1!=e2:# and not e1 in self.concave_vert:
                 #self.remove_interval(its,preve1,t,its[preve1].end())
-                print "from nextt change of edge",e1,self.its[e1].begin()
+                if self.debug: print "from nextt change of edge",e1,self.its[e1].begin()
                 return e1,self.its[e1].begin()
             #elif e1 in self.concave_vert:
             #    return -e1,0.0
@@ -288,13 +286,13 @@ class fp(object):
         if x!=None:
             return e1next,tnext,e2prev,rnext,mp
         else:
-            print "this has failed..",e1next,tnext,e2prev,rnext,mp
+            if self.debug: print "this has failed..",e1next,tnext,e2prev,rnext,mp
             if rnext>self.its[e2prev].begin():
                 _,tnext,mp,x = self.footprintIt(e2prev,self.its[e2prev].begin(),e1next)
                 if x!=None:
                     return e1next,tnext,e2prev,self.its[e2prev].begin(),mp
             e2next = self.prevedge(e2prev)
-            print "so now trying",e1next,tnext,e2next
+            if self.debug: print "so now trying",e1next,tnext,e2next
             _,rnext,mp,x = self.footprintIt(e1next,tnext,e2next)
             if rnext>=0.0 and rnext<=1.0:
                 return e1next,tnext,e2next,rnext,mp
@@ -338,7 +336,7 @@ class fp(object):
                     if fpexists==True:
                         break
             if fpexists:
-                print "dist failure with enew",enew
+                if self.debug: print "dist failure with enew",enew
                 finishededges.append(enew)
 
                 e1next= enew;rnext= t0;continue
@@ -480,7 +478,7 @@ class fp(object):
                 noofsteps = 0
                 e1prev,tprev,e2prev,rprev = mplast[1:5]
                 if len(pe) >0 :
-                    print "dist failure with ",pe
+                    if self.debug: print "dist failure with ",pe
                     if False and mplast[1]!= mpcurr[1]:#e1 has changed
                         k = -2
                         curre = mpcurr[1]
@@ -737,11 +735,30 @@ class fp(object):
                     pts1=self.iterate(mpn[1],mpn[2],mpn[3],mpn[4],mpn,pts,0.01,500)
         return points,self.edges
         '''
-    def testcv(self,cv,points,stepsize=0.01,noofpoints=100):
+    def testcv(self,cv,points,stepsize=0.01,noofpoints=10000):
         assert cv in self.convex_vert
         mp=self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0
         pts = self.iterate(mp[1],mp[2],mp[3],mp[4],mp,points,stepsize,noofpoints)
         return pts
+    def pp(self,maxis): #post processing
+        maxis1 = copy.copy(maxis)
+        for ed in maxis1:
+            if ed[0][1] in self.reflex_edges or not ed[0][3] in self.reflex_edges:
+                continue
+            rad = ed[0][-1]
+            for pt in ed:
+                if pt[3] in self.reflex_edges:
+                    pp = self.pprime(self.edges[pt[1]],pt[2])
+                    if len(pp)==0:
+                        continue
+                    n = np.array([pp[1],-1*pp[0]])
+                    n = n/np.linalg.norm(pp)
+                    p = self.p(self.edges[pt[1]],pt[2])
+                    mpnew = p + rad*n
+                    pt[0] = mpnew
+        return maxis1
+
+
 
 
 
@@ -1652,7 +1669,7 @@ class Reflex(object):
                 thetan = np.arctan2(vectr[1],vectr[0])
                 if thetan<0 and self.thetaflag:
                     thetan = thetan + 2*np.pi
-                print thetan,self.theta1,self.theta2
+                #if self.debug: print "in footprint", thetan,self.theta1,self.theta2
                 t = (thetan-self.theta1)/(self.theta2-self.theta1)
                 return ep,t,mp
                 #get unit normal vector
