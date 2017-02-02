@@ -34,9 +34,10 @@ class fp(object):
             r = Reflex()
             r.update(self,k)
             self.reflex_objects[k]=r
-        for k in self.reflex_edges:
-            r = self.reflex_objects[k]
-            r.updateRad(self,k)
+        #for k in self.reflex_edges:
+
+            #r = self.reflex_objects[k]
+            #r.updateRad(self,k)
 
     def secant(self,f,rs):
         fxi = f(rs[-1])
@@ -288,11 +289,10 @@ class fp(object):
             return e1next,tnext,e2prev,rnext,mp
         else:
             print "this has failed..",e1next,tnext,e2prev,rnext,mp
-            if rprev>self.its[e2prev].begin():
+            if rnext>self.its[e2prev].begin():
                 _,tnext,mp,x = self.footprintIt(e2prev,self.its[e2prev].begin(),e1next)
                 if x!=None:
                     return e1next,tnext,e2prev,self.its[e2prev].begin(),mp
-
             e2next = self.prevedge(e2prev)
             print "so now trying",e1next,tnext,e2next
             _,rnext,mp,x = self.footprintIt(e1next,tnext,e2next)
@@ -447,38 +447,17 @@ class fp(object):
                 edgechange = True
                 tcheck = t;rcheck=r
                 if e1!=e1prev:
-                    tcheck = self.its[e1].begin()
-                    _,rcheck,mp0 = self.footprint(e1,tcheck,e2)
-
-                elif e2!=e2prev:
-                    rcheck=self.its[e2].end()-0.001
-                    _,tcheck,mp0 = self.footprint(e2,rcheck,e1)
-                if t<0 or t>1 or r<0 or r>1:
-                    if self.debug: print "beginning of edge failing, retract would also fail so breaking"
-                    break #to trigger break
-                else:
-                    dist = np.linalg.norm(self.p(self.edges[e1],t)-mp0)
-                    '''
-                    assert mplast[1]==e1prev and mplast[3]==e2prev
                     self.its[e1prev].chop(mplast[2],self.its[e1prev].end())
+                    if t>self.its[e1].begin():
+                        self.its[e1].chop(self.its[e1].begin(),t)
+                    #tcheck = self.its[e1].begin()
+                    #_,rcheck,mp0 = self.footprint(e1,tcheck,e2)
+                if e2!=e2prev:
                     self.its[e2prev].chop(self.its[e2prev].begin(),mplast[4])
-                    '''
-                    try:
-                      self.manage_interval(mplast,mpcurr)
-                    except:
-                        pass
-                    mplast = [mp0,e1,tcheck,e2,rcheck,dist]
-                    '''
-                    try:
-                        self.manage_interval(mplast,mpcurr) #introduced as debug
-                        mplast = mplast1
-                    except:
-                        self.manage_interval(mplast,mplast1)
-                        mplast=mplast1
-                    '''
-                    points.append(mplast)
-                    count +=1
-                    countlast = count
+                    if r<self.its[e2].end():
+                        self.its[e2].chop(r,self.its[e2].end())
+                mplast = [mp,e1,t,e2,r,dist]
+                countlast = count
             if self.debug: print 'points: #',count,e1,t,e2,r,mp
             if e1 == -1:# or t<0.0 or t>1.0 or r<0.0  or r>1.0:
                 if self.debug: print "breaking ",e1,r,t
@@ -758,10 +737,18 @@ class fp(object):
                     pts1=self.iterate(mpn[1],mpn[2],mpn[3],mpn[4],mpn,pts,0.01,500)
         return points,self.edges
         '''
-    def test3(self,letter):
+    def testcv(self,cv,points,stepsize=0.01,noofpoints=100):
+        assert cv in self.convex_vert
+        mp=self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0
+        pts = self.iterate(mp[1],mp[2],mp[3],mp[4],mp,points,stepsize,noofpoints)
+        return pts
+
+
+
+    def test3(self,letter,pts):
         fl = fp(letter)
         try:
-            pts=[];pts1=fl.test1(pts)
+            pts1=fl.test1(pts)
         except:
             q1=fl.printMa(pts);check.printEdges(q1[0]+fl.edges,0,False)
             check.printEdges(fl.edges)
@@ -811,7 +798,7 @@ class fp(object):
           distk,_,_ = self.distance(mink,mpcurr[0])
           tf = mplast[2];rf=mplast[4]
           mpn = mplast[0]
-          while abs(distk-dist)>2.0  and count < 20:
+          while abs(distk-dist)>2.0  and count < 20 and tf!=tl:
                 count += 1
                 tn = (tf + tl)/2.0
                 rn = (rf+rl)/2.0
@@ -844,7 +831,7 @@ class fp(object):
           _,tk,mpk = self.footprint(mpfn[1],mpfn[2],mink)
           _,tk1,mpk1=self.footprint(mpfn[3],mpfn[4],mink)
           try: assert abs(tk-tk1)<0.01 and np.linalg.norm(mpk-mpn)<2.0 and np.linalg.norm(mpk1-mpn)<2.0
-          except:   print abs(tk-tk1),np.linalg.norm(mpk-mpn),np.linalg.norm(mpk1-mpn);#raise Exception('possible error in retract')
+          except:   print "in retract:",abs(tk-tk1),np.linalg.norm(mpk-mpn),np.linalg.norm(mpk1-mpn);#raise Exception('possible error in retract')
 
           mpfn1 = [mpk,mpfn[1],mpfn[2],mink,tk,distk]
           mpfn2 = [mpk1,mink,tk1,mpfn[3],mpfn[4],distk]
@@ -1366,8 +1353,9 @@ class Reflex(object):
             #    theta2 += 2*np.pi
             self.n1 = n1;self.n2=n2
             theta1 = np.arctan2(n1[1],n1[0])
+            self.thetae=[theta1,theta2]
             self.thetaflag=False #if true add 2*np.pi if angle <0
-            if theta1<0 and theta2>0:
+            if theta1<0 and theta2>0 and theta2-theta1>np.pi:
                 theta1 += 2*np.pi;self.thetaflag=True
             if theta2<0  and theta1>0:
                 theta2 += 2*np.pi;self.thetaflag=True
@@ -1391,7 +1379,7 @@ class Reflex(object):
                 #print "i,e1,e2",i,e2,e1
                 rad1=rad2=float('inf');mp1=mp2=[];r1=r2=-1
 
-                _,r,mp = self.footprintn(i,0.0,-1)
+                _,r,mp = self.footprintn(i,1.0,-1)
                 #print "with e2=0.0",e2,r
                 if r>=0.0 and r<=1.0:
                     rad2 = np.linalg.norm(mp-self.p)
@@ -1405,7 +1393,7 @@ class Reflex(object):
                     mp2 = mp
                     r2=r;
 
-                _,r,mp = self.footprintn(i,1.0,-1)
+                _,r,mp = self.footprintn(i,0.0,-1)
                 #print "with e1=1.0",e2,r
 
                 if r>=0.0 and r<=1.0:
@@ -1511,8 +1499,8 @@ class Reflex(object):
                     mp = self.p + d1*n
                     vect = mp-refother.p
                     thetan = np.arctan2(vect[1],vect[0])
-                    #if thetan<0:
-                    #    thetan = 2*np.pi+thetan
+                    if thetan<0 and refother.flag:
+                        thetan = 2*np.pi+thetan
 
                     ep.append([self.p,mp])
                     ep.append([mp])
