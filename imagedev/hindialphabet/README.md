@@ -10,3 +10,6 @@ paper writing to devise new algorithm for finding footprint
 as on 1st Feb:
 still few errors where several corners are present..we need to check letter B
 and then we can find
+as on 2nd Feb:
+#most of the bugs removed
+need to handle the case where both the edges transition simultaneously
