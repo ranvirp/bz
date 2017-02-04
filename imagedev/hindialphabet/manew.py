@@ -6,9 +6,12 @@ import playground3 as pg3
 import sys
 import traceback
 import math
+import operator as op
+
 from intervaltree import IntervalTree as it
 from intervaltree import Interval as iv
 import debug
+from scipy import optimize
 
 
 
@@ -18,15 +21,21 @@ pairs = {}
 tracededges=[]
 class fp(object):
     maxcount = 1
-    def __init__(self,letter):
+    def __init__(self,letter,debug=False):
         #self.edges,self.its,self.cnts,self.vertices,self.convex_vert,self.concave_vert=
-        self.debug = True
+        self.debug = False
+        self.debug2 = False
+        self.stroke_points={}
+        self.stroke_segments={}
+        self.stroketree=[]
+        self.current_segment_count=0
         self.reflex_edges=[]
 
         self.modEdges(letter)
         self.untracededges=[]
         self.tracededges = []
         self.reflex_objects = {}
+        self.pairs={}
         for k,_ in enumerate(self.edges):
             self.untracededges.append(k)
 
@@ -34,10 +43,11 @@ class fp(object):
             r = Reflex()
             r.update(self,k)
             self.reflex_objects[k]=r
-        #for k in self.reflex_edges:
+        if debug:
+            for k in self.reflex_edges:
 
-            #r = self.reflex_objects[k]
-            #r.updateRad(self,k)
+                r = self.reflex_objects[k]
+                r.updateRad(self,k)
 
     def secant(self,f,rs):
         fxi = f(rs[-1])
@@ -92,7 +102,7 @@ class fp(object):
         dist0,p2i,r1 =self.distance(e2,p1) #randomly ..no partcular thought
         edges = []
         edges.append([p1,p2i])
-        #print dist0,r1
+        if self.debug2: print "initial distance ",dist0,r1,e2,p1
         if r1 <0.0:
             #print "here"
             p2i = self.p(quad2,0.0);dist0 = np.linalg.norm(p2i-p1)
@@ -118,7 +128,7 @@ class fp(object):
                 dist2,p2i,r1 =self.distance(e2,fpi) #randomly ..no partcular thought
             '''
 
-            #print dist2,p2i,r1
+            if self.debug2: print "in footprint: dist2,p2i,r1",dist2,p2i,r1
             #if r1<0.0 or r1>1.0:
             #    break
             if abs(dist2-dist1)<0.00001:
@@ -127,7 +137,7 @@ class fp(object):
                 dist0 = np.linalg.norm(p2i-p1)
         edges.append([p1,fpi]);edges.append([p2i,fpi]);edges.append([p1]);edges+=[[p2i],[p1,p2i],[fpi]]
 
-        #print r1,np.cross(fpi-p1,p1prime),abs(dist2-dist1)
+        if self.debug2: print "in footprint",r1,np.cross(fpi-p1,p1prime),abs(dist2-dist1)
         if np.cross(fpi-p1,p1prime)>=0 and abs(dist2-dist1)<1.0:
           return edges,r1,fpi
         else:
@@ -138,24 +148,43 @@ class fp(object):
             return e1r.distance(p0)
         quad = self.edges[e1]
         def f(t):
-                #if t>=1:
-                #    return np.dot(self.pprime(quad,1.0),self.p(quad,1.0)-p0)
-                #elif t<=0:
-                #    return np.dot(self.pprime(quad,0.0),self.p(quad,0.0)-p0)
-                #else:
-                    return np.dot(self.pprime(quad,t),self.p(quad,t)-p0)
-        rs = [];rs.append(0.3);rs.append(0.5)
+             return np.dot(self.pprime(quad,t),self.p(quad,t)-p0)
+        rs = [];rs.append(0.4);rs.append(0.6)
         rn = self.secant(f,rs)
+        #rn = optimize.newton(f,x0=1.0)
         p1 = self.p(quad,rn);p1prime=self.pprime(quad,rn)
         if debug:
             ep=[];ep.append([p0,p1]);ep.append([p1,p1+p1prime]);check.printEdges(ep+self.edges,0,False)
-        #print abs(f(rn))
+            print abs(f(rn)),rn
         if np.cross(p0-p1,p1prime) >=0 and abs(f(rn))<1.0: # point is on right side of the side
              return np.linalg.norm(p1-p0),p1,rn
         elif np.cross(p0-p1,p1prime) <0 and abs(f(rn))<1.0:
             return -1*np.linalg.norm(p1-p0),p1,rn
         else:
             return float('inf'),p1,rn
+    def distancenew(self,e1,p0):
+        quad = self.edges[e1]
+
+        def f(t):
+             return np.dot(self.pprime(quad,t),p0-self.p(quad,t))
+        def dist(t):
+            return self.p(quad,t),np.linalg.norm(p0-self.p(quad,t))
+        rf=0.5;rl=1.0;rn=rl
+        print f(rf),f(rl)
+        if f(rf)==0: q=dist(rf);return q[1],q[0],rf
+        if f(rl)==0: q=dist(rl);return q[1],q[0],rl
+        if f(rf)*f(rl)>0: print "does not exist";return float('inf'),[],-1
+        count =0
+        while rf<rl and count<50:
+            rn = (rf+rl)/2.0
+            if abs(f(rn))<0.00001: break
+            if f(rf)<0 and f(rn)>0:
+                rl = rn
+            else:
+                rf=rn
+            count += 1
+        if abs(f(rn))<0.001: q=dist(rn);return q[1],q[0],rn
+
     def distanceIt(self,ind,p0,stepsize=0.01):#distance between a point and p
            #print "distanceIt,ind,p0",ind,p0
           # if ind==37:
@@ -172,13 +201,14 @@ class fp(object):
                return float("inf"),[],-1
     def manage_interval(self,mplast,mpcurr):
         assert mplast[1]==mpcurr[1] and mplast[3]==mpcurr[3]
-        if self.debug: print "now managing interval of",mplast,mpcurr
+        if self.debug2: print "now managing interval of",mplast,mpcurr
         self.its[mplast[1]].chop(mplast[2],mpcurr[2])
         self.its[mplast[3]].chop(mpcurr[4],mplast[4])
 
     def nextt(self,e1,t,e2,stepsize=0.05):
         #print "now in nextt"
         iv1 = sorted(self.its[e1].search(t))
+        if self.debug2: print "in nextt:",e1,t,iv1,t+stepsize,iv1[-1].end-0.001
         if len(iv1) == 0:
             if self.debug: print "not found t",t," in",self.its[e1]
             return -1,-1
@@ -192,9 +222,12 @@ class fp(object):
             q1 = sorted(self.its[e1])
             for k,iv0 in enumerate(q1):
                 if t>=iv0.begin and t<=iv0.end:
-                    if k!=len(q1)-1:
+                    j = k
+                    while j!=len(q1)-1:
                         if self.debug: print "this happened in nextt"
-                        return e1,q1[k+1].begin
+                        if q1[j+1].end-q1[j+1].begin>0.001:
+                            return e1,q1[k+1].begin
+                        j = j+1
             preve1 = e1
             e1 = self.nextedge(e1)
             if e1!=e2:# and not e1 in self.concave_vert:
@@ -279,7 +312,7 @@ class fp(object):
     def updateTn(self,e1prev,tprev,e2prev,rprev,stepsize=0.05):
 
         e1next,tnext = self.nextt(e1prev,tprev,e2prev,stepsize)
-        #print "in update ",e1prev,tprev,e1next,tnext
+        if self.debug2: print "in update ",e1prev,tprev,e1next,tnext
         if tnext == -1 and e1next==-1:
             return -1,-1,-1,-1,[]
         _,rnext,mp,x = self.footprintIt(e1next,tnext,e2prev)
@@ -287,14 +320,15 @@ class fp(object):
             return e1next,tnext,e2prev,rnext,mp
         else:
             if self.debug: print "this has failed..",e1next,tnext,e2prev,rnext,mp
-            if rnext>self.its[e2prev].begin():
-                _,tnext,mp,x = self.footprintIt(e2prev,self.its[e2prev].begin(),e1next)
+            if rnext>self.its[e2prev].end():
+                _,t1next,mp,x = self.footprintIt(e2prev,self.its[e2prev].end(),e1next)
                 if x!=None:
-                    return e1next,tnext,e2prev,self.its[e2prev].begin(),mp
+                    return e1next,t1next,e2prev,self.its[e2prev].end(),mp
             e2next = self.prevedge(e2prev)
             if self.debug: print "so now trying",e1next,tnext,e2next
             _,rnext,mp,x = self.footprintIt(e1next,tnext,e2next)
-            if rnext>=0.0 and rnext<=1.0:
+            if self.debug: print "and we got ",e1next,tnext,e2next,rnext,x
+            if x!=None:
                 return e1next,tnext,e2next,rnext,mp
             else:
                 return -1,-1,-1,-1,[]
@@ -421,10 +455,13 @@ class fp(object):
             if abs(dist3)<=dist:
                 fpexists=True
         return fpexists,t0
-    def iterate(self,e1,t,e2,r,mplast,maxis,stepsize=0.05,counts=10,MinDistBeforeDistCheck=20.0):
+    def iterate(self,e1,t,e2,r,mplast,maxis,strokecount,stepsize=0.05,counts=10,MinDistBeforeDistCheck=20.0):
         if e1==e2:
             return
-        if self.debug: print "beginning",e1,t,e2,r,counts
+        if self.debug: print "beginning",e1,e2,t,r
+        print e1,e2
+        self.pairs[e1] =e2
+        self.current_segment_count += 1
         e1in,tin,e2in,rin = e1,t,e2,r
         count = -1
         noofsteps = 0
@@ -432,6 +469,10 @@ class fp(object):
 
         points = [mplast]
         maxis.append(points)
+        stroke = Stroke()
+        stroke.i = strokecount
+        stroke.points = points
+        self.stroke_segments[strokecount]=stroke
         savedmplast = mplast
         #mplastn = self.footprintIt(edges[e1],t,edges[e2],its[e1],its[e2],r)
         #mplast = [mplastn,e1,t,e2,r]
@@ -441,6 +482,7 @@ class fp(object):
             e1prev,tprev,e2prev,rprev = e1,t,e2,r
             edgechange = False
             e1,t,e2,r,mp = self.updateTn(e1,t,e2,r,stepsize)
+            if self.debug2: print "testing",e1,t,e2,r,mp
             if (e1!=e1prev or e2!=e2prev) and e1!=-1 and e2!=-1:
                 edgechange = True
                 tcheck = t;rcheck=r
@@ -454,9 +496,12 @@ class fp(object):
                     self.its[e2prev].chop(self.its[e2prev].begin(),mplast[4])
                     if r<self.its[e2].end():
                         self.its[e2].chop(r,self.its[e2].end())
+                dist = np.linalg.norm(self.p(self.edges[e1],t)-mp)
                 mplast = [mp,e1,t,e2,r,dist]
+                print e1,e2
+                self.pairs[e1] = e2
                 countlast = count
-            if self.debug: print 'points: #',count,e1,t,e2,r,mp
+            if self.debug2: print 'points: #{0} {1},{2} {3},{4},{5}'.format(count,e1,e2,t,r,mp)
             if e1 == -1:# or t<0.0 or t>1.0 or r<0.0  or r>1.0:
                 if self.debug: print "breaking ",e1,r,t
                 break
@@ -465,7 +510,7 @@ class fp(object):
             points.append([mp,e1,t,e2,r,dist])
             mpcurr = [mp,e1,t,e2,r,dist]
             if dist>MinDistBeforeDistCheck and ( noofsteps>5 or edgechange):# or noofsteps>2 :
-                if self.debug: print "now doing distance check"
+                if self.debug2: print "now doing distance check"
                 negdist = False
                 while self.negdistcheck(mp):
                     mpcurr = points.pop(-1)
@@ -500,21 +545,24 @@ class fp(object):
                     mps = self.retract(mpcurr,mplast,mink,mindist)
                     mpfn = mps.pop(-1)
                     #self.manage_interval(savedmplast,mpfn)
-                    print "retracted..first",mps
+                    if self.debug: print "retracted..first",mps
                     e1,t,e2,r = mpfn[1:5]
                     #points.append([mpfn[0]])
                     points.append(mpfn)
+                    #if len(mps)>0:
+                    #    maxis.append(points)
                     for k,mp1 in enumerate(mps):
                         #if mp[1] in convex_vert or e3!=self.nextedge(mpfn[1],cnts):
                         #print mp1
-                        self.iterate(mp1[1],mp1[2],mp1[3],mp1[4],mp1,maxis,stepsize=stepsize,counts=counts)
-                    if len(mps)>0:
-                        maxis.append(points)
+                        self.current_segment_count += 1
+                        stroke.branches.append(self.current_segment_count)
+                        self.iterate(mp1[1],mp1[2],mp1[3],mp1[4],mp1,maxis,self.current_segment_count,stepsize=stepsize,counts=counts)
+
                         #points = []
                     break
                 else:
                     self.manage_interval(mplast,mpcurr)
-                    pass
+                    #pass
                 mplast = mpcurr
                 countlast = count
 
@@ -712,12 +760,14 @@ class fp(object):
 
     def test1(self,points,stepsize=0.01,noofpoints=10000):
         mps = []
-        for cv in self.convex_vert:
-            mps.append([self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0])
+        #for cv in self.convex_vert:
+        cv = self.convex_vert[0]
+        mps.append([self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0])
         while len(mps) > 0:
             mp = mps.pop(-1)
-            pts = self.iterate(mp[1],mp[2],mp[3],mp[4],mp,points,stepsize,noofpoints)
+            pts = self.iterate(mp[1],mp[2],mp[3],mp[4],mp,points,self.current_segment_count,stepsize,noofpoints)
             #print len(points)
+        #self.completeRest(points)
         '''
         for i,edge1 in enumerate(self.edges):
             if self.its[i].end()-self.its[i].begin()<=0.001:
@@ -738,7 +788,7 @@ class fp(object):
     def testcv(self,cv,points,stepsize=0.01,noofpoints=10000):
         assert cv in self.convex_vert
         mp=self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0
-        pts = self.iterate(mp[1],mp[2],mp[3],mp[4],mp,points,stepsize,noofpoints)
+        pts = self.iterate(mp[1],mp[2],mp[3],mp[4],mp,points,self.current_segment_count,stepsize,noofpoints)
         return pts
     def pp(self,maxis): #post processing
         maxis1 = copy.copy(maxis)
@@ -757,6 +807,46 @@ class fp(object):
                     mpnew = p + rad*n
                     pt[0] = mpnew
         return maxis1
+    def cnvPtsToBezier(self,stroke):
+        if len(stroke.path)==0:
+            curvepoints=list(zip(*stroke.points)[0])
+            #print curvepoints
+            color = (stroke.i*10%255,stroke.i*2%255,stroke.i*5%255)
+
+            if len(curvepoints)==2:
+                curvepoints.insert(0,(curvepoints[0]+curvepoints[1])/2.0)
+                stroke.path.append(curvepoints)
+            elif len(curvepoints)>2:
+                bzs = fitCurve(curvepoints,10.0)
+                for bz in bzs:
+                    edge = [bz,'r',0,str(stroke.i)]
+                    stroke.path.append(edge)
+            elif len(curvepoints)==1:
+                stroke.path.append(curvepoints)
+
+    def printStroke(self,stroke,edges,tracedstroke):
+        tracedstroke.append(stroke.i)
+        edges += stroke.path
+        for br in stroke.branches:
+            self.printStroke(self.stroke_segments[br],edges,tracedstroke)
+    def printStrokes(self):
+        tracedstroke = [];edges=[]
+        for strokeind in self.stroke_segments:
+            stroke =self.stroke_segments[strokeind]
+            self.cnvPtsToBezier(stroke)
+            if not stroke.i in tracedstroke:
+                self.printStroke(stroke,edges,tracedstroke)
+        check.printEdges(edges,0,False,True)
+    def completeRest(self,maxis):
+        for k,edge in enumerate(self.edges):
+            for i in xrange(k+1,len(self.edges),1):
+                e1 = k;e2=i;t=self.its[e1].begin()
+                _,r,mp,x = self.footprintIt(e1,t,e2)
+                if x!=None:
+                    dist = np.linalg.norm(mp-self.p(self.edges[e1],t))
+                    mplast = [mp,e1,t,e2,r,dist]
+                    self.iterate(e1,t,e2,r,mplast,maxis,self.current_segment_count)
+
 
 
 
@@ -781,7 +871,7 @@ class fp(object):
         dist = min(diste1,diste2)
         if dist == float('inf'):
             print "infinite distance ",e1,e2,t,r,diste1,diste2,mp
-            return []
+            return [],float('inf'),-1,dist
         pe = []
         mindist3 = float('inf')
         mink = -1
@@ -792,7 +882,7 @@ class fp(object):
             # or k in tracededges:
                 continue
             dist3,p,t = self.distanceIt(k,mp,stepsize)
-            if dist3>0 and abs(dist3)< dist:
+            if dist3< dist:
                 #print k,dist3,dist
 
                 pe.append([k,dist3,t])
@@ -815,7 +905,7 @@ class fp(object):
           distk,_,_ = self.distance(mink,mpcurr[0])
           tf = mplast[2];rf=mplast[4]
           mpn = mplast[0]
-          while abs(distk-dist)>2.0  and count < 20 and tf!=tl:
+          while abs(distk-dist)>0.0001  and count < 20 and tf!=tl:
                 count += 1
                 tn = (tf + tl)/2.0
                 rn = (rf+rl)/2.0
@@ -840,19 +930,45 @@ class fp(object):
                 mpfn = [mpn,e1,tn,e2,rn,dist]
           else:
                mpfn = mpcurr
-          if abs(distk-dist)>2.0:
-               print "possible bug in retraction, new dist difference is ",abs(distk-dist),mpcurr,mplast
+          if abs(distk-dist)>0.0001:
+               print "possible bug in retraction, new dist difference is ",abs(distk-dist),mpcurr,mplast,mink
           mps = []
            #mps.append([mpfn[0],mink,])
           #distk,fpk,tk = self.distanceIt(mink,mpn)
           _,tk,mpk = self.footprint(mpfn[1],mpfn[2],mink)
-          _,tk1,mpk1=self.footprint(mpfn[3],mpfn[4],mink)
-          try: assert abs(tk-tk1)<0.01 and np.linalg.norm(mpk-mpn)<2.0 and np.linalg.norm(mpk1-mpn)<2.0
-          except:   print "in retract:",abs(tk-tk1),np.linalg.norm(mpk-mpn),np.linalg.norm(mpk1-mpn);#raise Exception('possible error in retract')
+          if tk!=-1:
+               _,rk1,mpk1=self.footprint(mink,tk,mpfn[3])
+               if rk1!=-1:
+                    mpfn[4]=rk1
+                    centroid = (mpk+mpk1+mpn)/3.0
+                    mpfn[0] = centroid
+                    mpfn2 = [centroid,mink,tk,mpfn[3],mpfn[4],distk]
+                    mpfn1 = [centroid,mpfn[1],mpfn[2],mink,tk,distk]
+                    mps.append(mpfn1);#;mps.append(mpfn3);mps.append(mpfn4)
+                    mps.append(mpfn2)
 
-          mpfn1 = [mpk,mpfn[1],mpfn[2],mink,tk,distk]
-          mpfn2 = [mpk1,mink,tk1,mpfn[3],mpfn[4],distk]
-          mps.append(mpfn1);mps.append(mpfn2)
+
+               else:
+                  centroid = (mpk+mpn)/2.0
+                  mpfn1 = [centroid,mpfn[1],mpfn[2],mink,tk,distk]
+                  mpfn[0]=centroid
+                  mps.append(mpfn1);#;mps.append(mpfn3);mps.append(mpfn4)
+          else:
+               _,tk,mpk = self.footprint(mpfn[3],mpfn[4],mink)
+               if tk!=-1:
+                   centroid = (mpn+mpk)/2.0;mpfn[0]=centroid
+                   mpfn1 = [centroid,mpfn[3],mpfn[4],mink,tk,distk]
+                   mps.append(mpfn1);#;mps.append(mpfn3);mps.append(mpfn4)
+
+
+
+
+
+          #try: assert np.linalg.norm(mpk-mpn)<2.0 and np.linalg.norm(mpk1-mpn)<2.0
+          #except:
+            #  print mpk,mpk1,mink,tk,mpfn[3],rk1
+             # print "in retract:",np.linalg.norm(mpk-mpn),np.linalg.norm(mpk1-mpn)#raise Exception('possible error in retract')
+
 
 
           '''
@@ -1062,6 +1178,7 @@ class fp(object):
             print beziers
             return  finedges,beziers
         else:
+            points.insert(0,(points[0]+points[1])/2.0) #line segment is also represented as three points for
             return finedges,[[points]]
 
 
@@ -1280,6 +1397,41 @@ class fp(object):
 
             pts1.append(pt)
         return np.array(pts1)
+    def ncr(self,n, r):
+        r = min(r, n-r)
+        if r == 0: return 1
+        numer = reduce(op.mul, xrange(n, n-r, -1))
+        denom = reduce(op.mul, xrange(1, r+1))
+        return numer//denom
+
+    def pprimec(self,edge,t):
+        n = len(edge)-1
+        pp =np.array([0.0,0.0])
+        for i in xrange(n):
+            pp += self.ncr(n-1,i)*math.pow(t,i)*math.pow(1-t,n-i-1)*n*(edge[i+1]-edge[i])
+        return pp
+    def pc(self,edge,t):
+        n= len(edge)-1
+        p = np.array([0.0,1.0])
+        for i in xrange(n+1):
+            p += self.ncr(n,i)*math.pow(t,i)*math.pow(1-t,n-i)*edge[i]
+        return p
+    def mergeAble(self,edge1,edge2,initialt = 0.8,err=0.001):
+        pp1 = self.pprimec(edge1,initialt);pp2=self.pprimec(edge2,1-initialt);p1=self.pc(edge1,initialt);p2=self.pc(edge2,1-initialt)
+        check.printEdges([edge1,edge2,[p1],[p1,p1+pp1],[p2,p2+pp2],[p2]]+self.edges,0,False)
+        print np.cross(pp1,pp2), edge1[0][1]-edge1[-1][1], edge2[0][1]-edge2[-1][1]
+        if abs(edge1[0][1]-edge1[-1][1]) <20.0:
+            pass
+
+        if abs(np.dot(self.pprimec(edge1,1.0),self.pprimec(edge2,0.0)))<err and np.linalg.norm(edge1[-1]-edge2[0])==0.0:
+            return 1,0
+        if abs(np.dot(self.pprimec(edge1,1.0),self.pprimec(edge2,1.0)))<err and np.linalg.norm(edge1[-1]-edge2[-1])==0.0:
+            return 1,1
+        if abs(np.dot(self.pprimec(edge1,0.0),self.pprimec(edge2,0.0)))<err and np.linalg.norm(edge1[0]-edge2[0])==0.0:
+            return 0,0
+        if abs(np.dot(self.pprimec(edge1,0.0),self.pprimec(edge2,1.0)))<err and np.linalg.norm(edge1[0]-edge2[-1])==0.0:
+            return 0,1
+
     '''
     n = n1*(1-t) + n2*t or t =norm(n-n1)/norm(n2-n1)
     Proposed if edge as e1 and reflext object as e2:
@@ -1366,16 +1518,21 @@ class Reflex(object):
             n2 = np.array([p2prime[1],-1*p2prime[0]])
 
             theta2 = np.arctan2(n2[1],n2[0])
+            #theta2 = np.arctan2(p2prime[1],p2prime[0])
             #if theta2<0:
             #    theta2 += 2*np.pi
             self.n1 = n1;self.n2=n2
             theta1 = np.arctan2(n1[1],n1[0])
+            #theta1 = np.arctan2(-p1prime[1],-p1prime[0])
             self.thetae=[theta1,theta2]
             self.thetaflag=False #if true add 2*np.pi if angle <0
-            if theta1<0 and theta2>0 and theta2-theta1>np.pi:
-                theta1 += 2*np.pi;self.thetaflag=True
+            #if theta1<0 and theta2>0 and theta2-theta1>np.pi:
+            #    theta1 += 2*np.pi;self.thetaflag=True
             if theta2<0  and theta1>0:
                 theta2 += 2*np.pi;self.thetaflag=True
+            elif theta2<0 and theta1<0 and abs(theta2)>abs(theta1):
+                theta2 += 2*np.pi;self.thetaflag=True
+
             self.theta1 = theta1
             self.theta2 = theta2
             self.degree1 = theta1*180/np.pi;self.degree2 = theta2*180/np.pi
@@ -1428,6 +1585,16 @@ class Reflex(object):
 
                 self.rads[i]=[r1,r2,rad1,rad2,mp1,mp2]
             self.rad=[savedrad1,savedrad2,savedmp1,savedmp2,savede1,savede2,savedr1,savedr2]
+        def update1(self,fp,vert_ind):
+            p0 = self.fp.vertices[self.i]
+            distarr = []
+            for k,edge in enumerate(self.fp.edges):
+                dist,fi,t = self.fp.distance(edge,p0)
+                distarr.append([k,dist,fi,t])
+                #if dist>0 and dist<mindist:
+                #    mindist=dist;n1
+
+
 
         def solve(self,t,e0):
             def f(r):
@@ -1647,6 +1814,8 @@ class Reflex(object):
                 normal = np.array([pprime[1],-1*pprime[0]])
                 assert np.dot(pprime,normal)==0
                 norm = np.linalg.norm(normal)
+                if norm ==0.0:
+                    norm = 0.000001
 
                 distp1p2 = np.linalg.norm(p-self.p)
                 costheta = np.dot(normal,self.p-p)/(distp1p2*norm)
@@ -1662,7 +1831,11 @@ class Reflex(object):
                 ep.append([self.p,self.p+20*self.n2])
 
                 vectr = mp - self.p
-                assert abs(np.linalg.norm(vectr)-d0)<0.001
+                try: assert abs(np.linalg.norm(vectr)-d0)<0.001
+                except:
+                    print "assertion failure:",abs(np.linalg.norm(vectr)-d0)
+                    return ep,-1,[]
+                    #raise Exception("both distances should be same")
                 costheta1 = np.dot(vectr,p-self.p)/(np.linalg.norm(vectr)*distp1p2)
                 #print costheta1,costheta
                 assert abs(costheta1-costheta)<0.0001
@@ -1700,8 +1873,31 @@ class Reflex(object):
             #if theta<0:
             #    theta += np.pi*2
             t = (theta-self.theta1)/(self.theta2-self.theta1)
+            if self.fp.its[self.i].search(t)==set():
+                return float('inf'),-1,[]
             n1 = self.n(0.0);n2=self.n(1.0)
             if np.cross(n1,pi-self.p)>0 and np.cross(pi-self.p,n2)>0:
                 return np.linalg.norm(pi-self.p),self.p,t
             else:
                 return -1*np.linalg.norm(pi-self.p),self.p,t
+class Stroke(object):
+    def __init__(self):
+        self.branches=[]
+        self.path = []
+        self.points = []
+    def add(self,branch):
+        self.branches.append(stroke)
+    def slope(self,t):
+        if t==1:#end
+           return self.path[-1]-self.path[-2]
+        else:
+           return self.path[1]-self.path[0]
+    def mergeAble(stroke1,stroke2,err=0.001):
+        if abs(np.dot(stroke1.slope(1),stroke2.slope(0)))<err and np.linalg.norm(stroke1.path[-1]-stroke2.path[0])==0.0:
+            return 1,0
+        if abs(np.dot(stroke1.slope(1),stroke2.slope(1)))<err and np.linalg.norm(stroke1.path[-1]-stroke2.path[-1])==0.0:
+            return 1,1
+        if abs(np.dot(stroke1.slope(0),stroke2.slope(0)))<err and np.linalg.norm(stroke1.path[0]-stroke2.path[0])==0.0:
+            return 0,0
+        if abs(np.dot(stroke1.slope(0),stroke2.slope(1)))<err and np.linalg.norm(stroke1.path[0]-stroke2.path[-1])==0.0:
+            return 0,1
