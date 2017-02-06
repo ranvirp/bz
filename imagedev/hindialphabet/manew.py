@@ -429,9 +429,13 @@ class fp(object):
         count = -1
         noofsteps = 0
         countlast = -1
+        if len(maxis)==0:
+            points=[mplast];maxis.append(points)
+        else:
+            points = maxis[-1]
 
-        points = [mplast]
-        maxis.append(points)
+        #points = [mplast]
+        #maxis.append(points)
         savedmplast = mplast
         #mplastn = self.footprintIt(edges[e1],t,edges[e2],its[e1],its[e2],r)
         #mplast = [mplastn,e1,t,e2,r]
@@ -497,7 +501,7 @@ class fp(object):
                                 break
 
                             k = k-1
-                    del points[countlast-count:-2]
+                    del points[countlast-count:-1]
                     mps = self.retract(mpcurr,mplast,mink,mindist)
                     mpfn = mps.pop(-1)
                     #self.manage_interval(savedmplast,mpfn)
@@ -505,9 +509,12 @@ class fp(object):
                     e1,t,e2,r = mpfn[1:5]
                     #points.append([mpfn[0]])
                     points.append(mpfn)
+                    #maxis.append(points)
+
                     for k,mp1 in enumerate(mps):
                         #if mp[1] in convex_vert or e3!=self.nextedge(mpfn[1],cnts):
                         #print mp1
+                        points=[];mp1[0]=mpfn[0];points.append(mp1);maxis.append(points)
                         self.iterate(mp1[1],mp1[2],mp1[3],mp1[4],mp1,maxis,stepsize=stepsize,counts=counts)
                     if len(mps)>0:
                         maxis.append(points)
