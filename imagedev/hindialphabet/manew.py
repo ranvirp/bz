@@ -1380,9 +1380,11 @@ class Reflex(object):
             theta1 = np.arctan2(n1[1],n1[0])
             self.thetae=[theta1,theta2]
             self.thetaflag=False #if true add 2*np.pi if angle <0
-            if theta1<0 and theta2>0 and theta2-theta1>np.pi:
-                theta1 += 2*np.pi;self.thetaflag=True
+            #if theta1<0 and theta2>0 and theta2-theta1>np.pi:
+            #    theta1 += 2*np.pi;self.thetaflag=True
             if theta2<0  and theta1>0:
+                theta2 += 2*np.pi;self.thetaflag=True
+            if theta2<0 and theta1<0 and abs(theta2)>abs(theta1):
                 theta2 += 2*np.pi;self.thetaflag=True
             self.theta1 = theta1
             self.theta2 = theta2

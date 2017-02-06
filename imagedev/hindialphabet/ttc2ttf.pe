@@ -1,0 +1,12 @@
+#!/usr/local/bin/fontforge
+# Usage: fontforge -script ttc2ttf.pe /path/to/font.ttc
+
+fonts = FontsInFile($1)
+n = SizeOf(fonts)
+i = 0
+while (i < n)
+	Open($1 + "(" + fonts[i] + ")")
+	Generate($fontname + ".ttf")
+	Print($fontname + ".ttf")
+	++i
+endloop
