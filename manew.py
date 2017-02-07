@@ -9,6 +9,108 @@ import math
 from intervaltree import IntervalTree as it
 from intervaltree import Interval as iv
 import debug
+import scipy
+import bezier
+def sgolay2d ( z, window_size, order, derivative=None):
+    """
+    """
+    # number of terms in the polynomial expression
+    n_terms = ( order + 1 ) * ( order + 2)  / 2.0
+
+    if  window_size % 2 == 0:
+        raise ValueError('window_size must be odd')
+
+    if window_size**2 < n_terms:
+        raise ValueError('order is too high for the window size')
+
+    half_size = window_size // 2
+
+    # exponents of the polynomial.
+    # p(x,y) = a0 + a1*x + a2*y + a3*x^2 + a4*y^2 + a5*x*y + ...
+    # this line gives a list of two item tuple. Each tuple contains
+    # the exponents of the k-th term. First element of tuple is for x
+    # second element for y.
+    # Ex. exps = [(0,0), (1,0), (0,1), (2,0), (1,1), (0,2), ...]
+    exps = [ (k-n, n) for k in range(order+1) for n in range(k+1) ]
+
+    # coordinates of points
+    ind = np.arange(-half_size, half_size+1, dtype=np.float64)
+    dx = np.repeat( ind, window_size )
+    dy = np.tile( ind, [window_size, 1]).reshape(window_size**2, )
+
+    # build matrix of system of equation
+    A = np.empty( (window_size**2, len(exps)) )
+    for i, exp in enumerate( exps ):
+        A[:,i] = (dx**exp[0]) * (dy**exp[1])
+
+    # pad input array with appropriate values at the four borders
+    new_shape = z.shape[0] + 2*half_size, z.shape[1] + 2*half_size
+    Z = np.zeros( (new_shape) )
+    # top band
+    band = z[0, :]
+    Z[:half_size, half_size:-half_size] =  band -  np.abs( np.flipud( z[1:half_size+1, :] ) - band )
+    # bottom band
+    band = z[-1, :]
+    Z[-half_size:, half_size:-half_size] = band  + np.abs( np.flipud( z[-half_size-1:-1, :] )  -band )
+    # left band
+    band = np.tile( z[:,0].reshape(-1,1), [1,half_size])
+    Z[half_size:-half_size, :half_size] = band - np.abs( np.fliplr( z[:, 1:half_size+1] ) - band )
+    # right band
+    band = np.tile( z[:,-1].reshape(-1,1), [1,half_size] )
+    Z[half_size:-half_size, -half_size:] =  band + np.abs( np.fliplr( z[:, -half_size-1:-1] ) - band )
+    # central band
+    Z[half_size:-half_size, half_size:-half_size] = z
+
+    # top left corner
+    band = z[0,0]
+    Z[:half_size,:half_size] = band - np.abs( np.flipud(np.fliplr(z[1:half_size+1,1:half_size+1]) ) - band )
+    # bottom right corner
+    band = z[-1,-1]
+    Z[-half_size:,-half_size:] = band + np.abs( np.flipud(np.fliplr(z[-half_size-1:-1,-half_size-1:-1]) ) - band )
+
+    # top right corner
+    band = Z[half_size,-half_size:]
+    Z[:half_size,-half_size:] = band - np.abs( np.flipud(Z[half_size+1:2*half_size+1,-half_size:]) - band )
+    # bottom left corner
+    band = Z[-half_size:,half_size].reshape(-1,1)
+    Z[-half_size:,:half_size] = band - np.abs( np.fliplr(Z[-half_size:, half_size+1:2*half_size+1]) - band )
+
+    # solve system and convolve
+    if derivative == None:
+        m = np.linalg.pinv(A)[0].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, m, mode='valid')
+    elif derivative == 'col':
+        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -c, mode='valid')
+    elif derivative == 'row':
+        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -r, mode='valid')
+    elif derivative == 'both':
+        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
+        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -r, mode='valid'), scipy.signal.fftconvolve(Z, -c, mode='valid')
+def stitch(bezier1,bezier2,ini1=1,ini2=0,distthreshold=10.0,deltat=0.01):
+    bz1 = bezier.Curve(np.array(bezier1),3);bz2=bezier.Curve(np.array(bezier2),3)
+    currdist = np.linalg.norm(bezier1[0-ini1]-bezier2[0-ini2])
+    if currdist>distthreshold:
+        return bezier1,bezier2
+    lastt = 1.0;firstt = 0.0;count =0
+    dist = currdist - 0.001
+    while dist>0.0001 and dist< currdist and count<10:
+        currdist = dist
+        lastt += deltat;firstt -= deltat
+        if ini1==1:
+            bz1n = bz1.specialize(0.0,lastt)
+        else:
+            bz1n = bz1.specialize(firstt,1.0)
+        if ini2==1:
+            bz2n = bz2.specialize(0.0,lastt)
+        else:
+            bz2n = bz2.specialize(firstt,1.0)
+        dist = np.linalg.norm(bz1n.nodes[0-ini1]-bz2n.nodes[0-ini2])
+        count += 1
+        print dist
+    return bz1n.nodes,bz2n.nodes
 
 
 
@@ -16,11 +118,16 @@ check = pg3.Check()
 count = 0
 pairs = {}
 tracededges=[]
+class Node(object):
+    def __init__(self, value, left=None, right=None):
+        self.value = value
+        self.left = left
+        self.right = right
 class fp(object):
     maxcount = 1
     def __init__(self,letter,fontfile="DevanagariSangamMN.ttf"):
         #self.edges,self.its,self.cnts,self.vertices,self.convex_vert,self.concave_vert=
-        self.debug = True
+        self.debug = True;self.debug2=False
         self.reflex_edges=[]
         self.stroke_branches={}
         self.stroke_count=0
@@ -252,7 +359,7 @@ class fp(object):
             e2next = self.prevedge(e2prev)
             if self.debug: print "so now trying",e1next,tnext,e2next
             _,rnext,mp,x = self.footprintIt(e1next,tnext,e2next)
-            if rnext>=0.0 and rnext<=1.0:
+            if rnext>=0.0 and rnext<=1.0 and x!=None:
                 return e1next,tnext,e2next,rnext,mp
             else:
                 return -1,-1,-1,-1,[]
@@ -467,6 +574,105 @@ class fp(object):
 
 
         #return points\
+    def iteraten(self,mplast,parent=-1,stepsize=0.05,counts=10,MinDistBeforeDistCheck=20.0):
+        e1,t,e2,r = mplast[1:5]
+        if e1==e2:
+            return
+        if self.debug: print "beginning",e1,t,e2,r,counts
+        e1in,tin,e2in,rin = e1,t,e2,r
+        count = -1
+        noofsteps = 0
+        countlast = -1
+        points = [mplast]
+        #points.append(mplast)
+        self.maxis.append(points)
+        currentindex = len(self.maxis)-1
+        if parent !=-1:
+            if parent in self.stroke_branches:
+                self.stroke_branches[parent].append(currentindex)
+            else:
+                self.stroke_branches[parent] = [currentindex]
+        savedmplast = mplast
+        #mplastn = self.footprintIt(edges[e1],t,edges[e2],its[e1],its[e2],r)
+        #mplast = [mplastn,e1,t,e2,r]
+        while count < counts:
+            count += 1
+            noofsteps += 1
+            e1prev,tprev,e2prev,rprev = e1,t,e2,r
+            edgechange = False
+            e1,t,e2,r,mp = self.updateTn(e1,t,e2,r,stepsize)
+            if (e1!=e1prev or e2!=e2prev) and e1!=-1 and e2!=-1:
+                edgechange = True
+                tcheck = t;rcheck=r
+                if e1!=e1prev:
+                    self.its[e1prev].chop(mplast[2],self.its[e1prev].end())
+                    if t>self.its[e1].begin():
+                        self.its[e1].chop(self.its[e1].begin(),t)
+                    #tcheck = self.its[e1].begin()
+                    #_,rcheck,mp0 = self.footprint(e1,tcheck,e2)
+                if e2!=e2prev:
+                    self.its[e2prev].chop(self.its[e2prev].begin(),mplast[4])
+                    if r<self.its[e2].end():
+                        self.its[e2].chop(r,self.its[e2].end())
+                dist = np.linalg.norm(self.p(self.edges[e1],t)-mp)
+                mplast = [mp,e1,t,e2,r,dist]
+                countlast = count
+            if self.debug: print 'points: #{0} {1},{2} {3},{4},{5}'.format(count,e1,e2,t,r,mp)
+            if e1 == -1:# or t<0.0 or t>1.0 or r<0.0  or r>1.0:
+                if self.debug: print "breaking ",e1,r,t
+                break
+            dist = np.linalg.norm(mp-self.p(self.edges[e1],t))
+            mpcurr = [mp,e1,t,e2,r,dist]
+            points.append(mpcurr)
+            if dist>MinDistBeforeDistCheck and ( noofsteps>5 or edgechange):# or noofsteps>2 :
+                if self.debug: print "now doing distance check"
+                negdist = False
+                while self.negdistcheck(mp):
+                    mpcurr = points.pop(-1)
+                    mp = mpcurr[0]
+                    negdist = True
+                if negdist:
+                    return
+
+                pe,mindist,mink,dist = self.distCheck(e1,t,e2,r,mp,stepsize)
+                noofsteps = 0
+                e1prev,tprev,e2prev,rprev = mplast[1:5]
+                if len(pe) >0 :
+                    if self.debug: print "dist failure with ",pe
+                    del points[countlast-count:0]
+                    mps = self.retract(mpcurr,mplast,mink,mindist)
+                    mpfn = mps.pop(-1)
+                    #self.manage_interval(savedmplast,mpfn)
+                    print "retracted..first",mps
+                    e1,t,e2,r = mpfn[1:5]
+                    points.append(mpfn)
+                    #self.maxis.append(points)
+                    #kpoints = {}
+                    #stroke_count = len(self.maxis)-1
+                    #self.stroke_branches[stroke_count]=[]
+                    #for k,mp1 in enumerate(mps):
+                    #    kpoints[k]=[mpfn];self.maxis.append(kpoints[k]);self.stroke_branches[stroke_count].append(len(self.maxis)-1)
+                    for k,mp1 in enumerate(mps):
+                        mp1[0] = mpfn[0]
+                        #self.iterate(mp1[1],mp1[2],mp1[3],mp1[4],mp1,kpoints[k],stepsize=stepsize,counts=counts)
+                        self.branches.append([currentindex,mp1])
+                    #if len(mps)>0:
+                    #    maxis.append(points)
+                        #points = []
+                    break
+                else:
+                    self.manage_interval(mplast,mpcurr)
+                    pass
+                mplast = mpcurr
+                countlast = count
+        #self.maxis.append(points)
+        #self.stroke_count += 1
+
+
+
+
+        #return points\
+
     def analyse(self):
         preve1='';preve2=''
         for ed in self.maxis:
@@ -693,6 +899,38 @@ class fp(object):
                     pts1=self.iterate(mpn[1],mpn[2],mpn[3],mpn[4],mpn,pts,0.01,500)
         return points,self.edges
         '''
+    def test1n(self,stepsize=0.01,noofpoints=10000):
+        mps = []
+        self.maxis=[]
+        self.branches=[]
+        for cv in self.convex_vert:
+        #cv=self.convex_vert[0]
+            self.branches.append([-1,[self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0]])
+            count = 0
+            while len(self.branches) > 0:
+                mp = self.branches.pop(0)
+            #points = [mp];self.maxis.append(points)
+                self.iteraten(mp[1],mp[0],stepsize,noofpoints)
+                count += 1
+            #print len(points)
+        '''
+        for i,edge1 in enumerate(self.edges):
+            if self.its[i].end()-self.its[i].begin()<=0.001:
+                continue
+            for j in xrange(i,len(self.edges),1):
+                if self.its[j].end()-self.its[j].begin()<=0.001:
+                    continue
+                e1 = i;e2 =j;t=self.its[e1].begin();r=self.its[e2].end()
+                q1 = self.footprint(self.edges[e1],t,self.edges[e2])
+                if q1[1]!=-1:
+                    mp = q1[2]
+                    dist = np.linalg.norm(self.p(self.edges[e1],t)-mp)
+                    mpn = [mp,e1,t,e2,r,dist]
+
+                    pts1=self.iterate(mpn[1],mpn[2],mpn[3],mpn[4],mpn,pts,0.01,500)
+        return points,self.edges
+        '''
+
     def testcv(self,cv,points,stepsize=0.01,noofpoints=10000):
         assert cv in self.convex_vert
         mp=self.vertices[cv],cv,0.0,self.prevedge(cv),1.0,0.0
@@ -739,7 +977,7 @@ class fp(object):
         dist = min(diste1,diste2)
         if dist == float('inf'):
             print "infinite distance ",e1,e2,t,r,diste1,diste2,mp
-            return []
+            return [],float('inf'),-1,float('inf')
         pe = []
         mindist3 = float('inf')
         mink = -1
@@ -777,18 +1015,23 @@ class fp(object):
                 count += 1
                 tn = (tf + tl)/2.0
                 rn = (rf+rl)/2.0
-                _,rn,mpn,x = self.footprintIt(e1,tn,e2)
-                if rn>=0.0 and rn<=1.0:
+                _,rn0,mpn,x = self.footprintIt(e1,tn,e2)
+                if rn0>=0.0 and rn0<=1.0:
+                    rn = rn0
                     distk,p1,r0 = self.distanceIt(mink,mpn)
                     dist = np.linalg.norm(mpn-self.p(self.edges[e2],rn))
                 else:
                     _,tn,mpn,x = self.footprintIt(e2,rn,e1)
-                    distk,p1,r0 = self.distanceIt(mink,mpn)
-                    dist = np.linalg.norm(mpn-self.p(self.edges[e1],tn))
+                    if self.debug2: print "e2,rn,e1,tn",e2,rn,e1,tn
+                    r0=-1
+                    if x!=None:
+                        distk,p1,r0 = self.distanceIt(mink,mpn)
+                        dist = np.linalg.norm(mpn-self.p(self.edges[e1],tn))
 
                     if r0 == -1:
                         print mplast,mpcurr
-                        sys.exit()
+                        break
+                        #raise Exception("do not how to proceed from here")
 
                 if distk < dist:
                         tl = tn
@@ -974,7 +1217,12 @@ class fp(object):
                 if pt[3] in self.reflex_edges and pt[1] not in self.reflex_edges:
                    if pt[3]!=preve2 and pt[1]==preve1:
                        preve2=pt[3];
-                       rad = pt[-1];preve1=pt[1]
+                       if i>0:
+                           print "rad here"
+                           rad = ed[i-1][-1];
+                       else:
+                           rad = pt[-1]
+                       preve1=pt[1]
                        print "rad for e1,e2=",pt[1],pt[3],rad,j
                    else:
                        pt[0] = offset(pt[1],pt[2],rad);preve2 = pt[3];preve1=pt[1]
@@ -985,7 +1233,11 @@ class fp(object):
                if pt[1] in self.reflex_edges and pt[3] not in self.reflex_edges:
                   if pt[1]!=preve1 and pt[3]==preve2:
                       preve2=pt[3];preve1=pt[1]
-                      rad = pt[-1];
+                      if i<len(ed)-1:
+                          print "rad here"
+                          rad = ed[i+1][-1]
+                      else:
+                          rad = pt[-1];
                       print "rad for e1,e2=",pt[1],pt[3],rad,j
                   else:
                       pt[0] = offset(pt[3],pt[4],rad);preve2 = pt[3];preve1=pt[1]
@@ -996,7 +1248,7 @@ class fp(object):
          for i,ed in enumerate(q):
              if len(ed)==1: pointindices.append(i)
              if i<len(q)-1:
-                 if np.linalg.norm(ed[-1][0]-q[i+1][0][0])<3.0:
+                 if np.linalg.norm(ed[-1][0]-q[i+1][0][0])<30.0:
                      ed[-1][0]=q[i+1][0][0]
          q1 = [q[i] for i,ed in enumerate(q) if i not in pointindices]
 
@@ -1153,14 +1405,17 @@ class fp(object):
                 store these points and convert as bezier curve and store
         '''
         return
-    def printMa(self,ma):
+    def printMa(self,ma,threshold=10):
+        def color(k):
+            return (k*25%255)/255.0,(k*40%255)/255.0,(k*10%255)/255.0
         points = []
         bzs = []
         man = self.pp(ma)
+        indexedbzs=[]
         for k,ed in enumerate(man):
-            crvs = []
+            crvs = [];offsetvect = np.array([0.0,0.0])
 
-            for point in ed:
+            for m,point in enumerate(ed):
                 if point != None:
                     if (point[1] in self.convex_vert and point[3] == self.prevedge(point[1])):
                         continue
@@ -1168,14 +1423,42 @@ class fp(object):
                         continue
 
                     if len(point)>0:
-                        points.append([point[0]])
-                        crvs.append(point[0])
-            crvs = self.smoothPoints(crvs)
+                        if m>=2:
+                            vect1 = point[0]-ed[m-1][0];vect2=ed[m-1][0]-ed[m-2][0]
+                            theta1=np.arctan2(vect1[1],vect1[0]);theta2 = np.arctan2(vect2[1],vect2[0])
+                            if np.tan(theta2-theta1) >threshold:
+                                print np.tan(theta2-theta1),threshold,theta1,theta2,m
+                                offsetvect = -1*vect2
+
+                        pt = point[0]-offsetvect
+                        points.append(pt)
+                        crvs.append(pt)
             if len(crvs)>2:
                 #pass
-                bz = fitCurve(crvs,10.0)
-                bzs += bz
-        return points,bzs
+                crvs = self.smoothPoints(crvs)
+                #print "began",crvs
+                #crvs = sgolay2d(np.array(crvs), window_size=11, order=2)
+                #crvs=map(np.array,zip(*crvs))
+                #print "finished",crvs
+                if len(crvs)>2:
+                    bz = fitCurve(crvs,10.0);indexedbzs.append(bz)
+                    bz0=[];offset=0
+                    for l,bzc in enumerate(bz):
+                        if l>0: offset = np.linalg.norm(bz[l][0]-bz[l-1][-1]);offsetvec1 = bz[l-1][-1]-bz[l][0]
+                        if offset>0:
+                            print "doing offset";
+                            for bzci,_ in enumerate(bzc):
+                                bzc[i] = bzc[bzci] + offsetvec1
+                        bz0 += [[bzc,color(k),0,k]]
+                        bzs += bz0
+            elif len(crvs)==2:
+                bzc = [[np.array([crvs[0],(crvs[0]+crvs[1])/2.0,crvs[1]])]];
+                indexedbzs.append(bzc);
+                bzc=[bzc,color(k),0,k]
+                bzs += bzc
+
+
+        return points,bzs,indexedbzs
     def vertAnalyse(self):
         self.concave_vert = []
         self.convex_vert = []
