@@ -8,6 +8,7 @@ from intervaltree import Interval as iv
 
 from matplotlib import pyplot as plt
 from matplotlib.path import Path
+from fitCurves import fitCurve
 import matplotlib.patches as patches
 class bz(object):
     @staticmethod
@@ -564,7 +565,7 @@ class Font(object):
              noofsteps += 1
 
              _,r,mp = self.footprint(e1, t, e2)
-             if r == float('inf'):
+             if r == float('inf') or r<-3.0 or t>3.0:
                  break
              radius = np.linalg.norm(mp - self.p(e1, t))
              mpcurr = [mp, e1, t, e2, r, radius]
@@ -635,11 +636,13 @@ class Font(object):
 
                  if mindist < radius and not concavedist:
                      print "distance failure with ", mine, mindist,rmine,radius
+                     '''
                      if mine in self.convex_vert:
                          if mine ==e1plus:
                             self.tracededges.append(e1)
                          elif mine==e2minus:
                              self.tracededges.append(e2)
+                     '''
                      if not edgechange:
                         mpcurr = self.retract(mplast, mpcurr, mindist, mine)
                      if e1concaveedgefound and e2concaveedgefound: #case #2A
@@ -794,17 +797,18 @@ class Font(object):
 
         self.tracededges=[]
         self.handledconcaveedges=[]
-        convc = self.concave_vert[0]
-        convexvert=[]
-        for convc in self.concave_vert:
-            e0 = self.nextedge(convc)
-            while not e0 in self.convex_vert and e0!=convc:
-                e0 = self.nextedge(e0)
-            try:
-                ind = self.convex_vert.index(e0)
-                if ind>=0:
-                    convexvert.append(ind)
-            except: pass
+        if len(self.concave_vert)>0:
+            convc = self.concave_vert[0]
+            convexvert=[]
+            for convc in self.concave_vert:
+                e0 = self.nextedge(convc)
+                while not e0 in self.convex_vert and e0!=convc:
+                    e0 = self.nextedge(e0)
+                try:
+                    ind = self.convex_vert.index(e0)
+                    if ind>=0:
+                        convexvert.append(ind)
+                except: pass
         for ind in self.convex_vert:
             # mps= self.removeEndpoints(ind)
              if ind in self.tracededges or self.prevedge(ind) in self.tracededges: continue
@@ -877,18 +881,32 @@ class Font(object):
 
         return
     def pe1(self,edges):
-        x = []
+        x = [];bzs=[]
         for ed in edges:
             #print ed
             if len(ed)==0 :
                 continue
-            ed = zip(*ed)[0]
+            #ed = zip(*ed)[0]
+            ed1=[]
+            for point in ed:
+                if (point[1] in self.convex_vert and point[3] == self.prevedge(point[1])):
+                    continue
+                if (point[3] in self.convex_vert and point[1] == self.prevedge(point[3])):
+                    continue
+                ed1.append(point)
+            if len(ed1)==0: continue
+            ed =zip(*ed1)[0]
+
+            if len(ed)>2:
+                bzs += fitCurve(ed,10.0)
             eds=[]
             for pt in ed:
                 eds.append([pt])
-            x.append([eds, 'r', ''])
+            #x.append([eds, 'r', ''])
         x.append([self.edges, 'g', ''])
+        x.append([bzs,'r',''])
         bz.pe(x)
+
 
 
 class strokes(object):
