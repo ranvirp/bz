@@ -51,11 +51,12 @@ class bz(object):
         #return
         for i in xrange(50):
             if (abs(rs[-1]-rs[-2])<0.000000001 or abs(fxi-fximinus1)<0.0000000001 or abs(fxi)<0.000000001):
+                #print abs(fxi-fximinus1),abs(fxi)
 
                 break
             ri = rs[-1]
             rn = ri -fxi *(rs[-1]-rs[-2])/(fxi-fximinus1)
-            #print rn
+            #print "rn=",rn
             rs.append(rn)
             fximinus1 = fxi
             fxi = f(rn)
@@ -63,9 +64,11 @@ class bz(object):
     @staticmethod
     def distance(quad,p0,rin=0.4,debug=False):
         def f(t):
+            #print t,bz.pprime(quad,t)
             return np.dot(bz.pprime(quad,t),p0-bz.p(quad,t))
         rs = [];rs.append(rin);rs.append(rin+0.2)
         rn = bz.secant(f,rs)
+        #print rn
         p1 = bz.p(quad,rn);p1prime=bz.pprime(quad,rn)
         if True or debug:
             ep=[];ep.append([p0]);ep.append([p0,p1]);ep.append([p1]);ep.append([p1,p1+p1prime])
@@ -105,7 +108,11 @@ class bz(object):
         p1 = bz.p(quad1, t)
         p1prime = bz.pprime(quad1, t)
         n1 = bz.normal(quad1,t,True)
-        dist0, p2i, r1,_ = bz.distance(quad2, p1,True)  # randomly ..no partcular thought
+        dist0, p2i, r1,_ = bz.distance(quad2, p1)  # randomly ..no partcular thought
+        if dist0 ==float('inf'):
+            #print "here"
+            p2i = bz.p(quad2,0.5);dist0 = np.linalg.norm(p2i-p1)
+
         edges = []
         edges.append([p1]);edges.append([p1, p2i])
         #print dist0,r1,p1
@@ -128,7 +135,7 @@ class bz(object):
             else:
                 dist1 = dist0 / 2.0
             fpi = p1 + dist1 * n1
-            dist2, p2i, r1,_ = bz.distance(quad2, fpi,True)  # randomly ..no partcular thought
+            dist2, p2i, r1,_ = bz.distance(quad2, fpi)  # randomly ..no partcular thought
             #print "dist2,",dist2,fpi,dist1,abs(dist2-dist1)
             if abs(dist2 - dist1) < 0.00001:
                 break
@@ -1179,9 +1186,24 @@ class Font(object):
             noofsteps += 1
             _, r, mp = self.footprint(e1, t, e2)
             #print e1,t,e2,r
-            if t>=0.0 and t<=1.0 and self.its[e1].search(t)==set():
+            if t>=0.0 and t<=1.0 and len(self.its[e1].search(t))==0:
                 print e1,t,self.its[e1]
-                break
+                if self.its[e1].end()-self.its[e1].begin()>0.01:
+                    sortedtree = sorted(self.its[e1])
+                    i=0;tfound=False
+                    for i,iv in enumerate(sortedtree):
+                        if iv.begin>t:
+                            t=iv.begin
+                            tfound=True
+                            print "t=",t
+                            break
+                    if tfound: continue
+                    else: print "t not found";break
+                else:
+                    break
+
+
+
             if t > 3.0:
                 print "t>3"
                 return
@@ -1189,12 +1211,15 @@ class Font(object):
                 print "r inf",e1,t,e2
                 return
             if t > tin:
+                #print "e1",e1,"chopped"
                 self.its[e1].chop(tin, t)
             if rin > r:
+                #print "e2", e2, "chopped"
+
                 self.its[e2].chop(r, rin)
             if rin == -float('inf'): rin = r
             radius = max(np.linalg.norm(mp - self.p(e1, t)), np.linalg.norm(mp - self.p(e2, r)))
-            if radius>self.maxradius*1.2 and self.maxradius>1.0: print "radius high";break
+            if radius>self.maxradius*1.5 and self.maxradius>1.0: print "radius high";break
             mpcurr = [mp, e1, t, e2, r, radius]
             if r <= 0.0 and not e2concaveedgefound :
                 '''
@@ -1210,12 +1235,12 @@ class Font(object):
                     break
                 if e2 in self.concave_vert :
                     if e2  in self.handledconcaveedges and t>1.0: break
-                    if e2 in self.handledconcaveedges and t<=1.0:continue
-                    e2concaveedgefound = True
-                    currconcaveedge = e2
-                    self.handledconcaveedges.append(e2)
-                    #self.findCounterPart(e2,radius,False)
-                    # continue
+                    if not(e2 in self.handledconcaveedges and t<=1.0):
+                        e2concaveedgefound = True
+                        currconcaveedge = e2
+                        self.handledconcaveedges.append(e2)
+                        #self.findCounterPart(e2,radius,False)
+                        # continue
                 else:
                     if self.its[e2].end() - self.its[e2].begin() < 0.1:
                         self.tracededges.append(e2)
@@ -1280,7 +1305,7 @@ class Font(object):
                         rin = -float('inf')
                         edges=[];eds.append(edges)
                         e1n=e1prev;t1=t0;e2n=self.prevedge(minc2)
-                        if False and self.checkPair(e1n,t1,e2n):
+                        if  self.checkPair(e1n,t1,e2n):
                             _,rn,mpn=self.footprint(e1n,t1,e2n)
                             self.mps.append([mpfin,e1n,t1,e2n,rn,radius])
                             print "e2:shall have a branch",e1n,e2n
@@ -1463,11 +1488,12 @@ class Font(object):
                         continue
                     continue
             elif   e2==self.prevedge(e1):
+                #print "we check distance"
 
                 noofsteps = 0
                 skipedges = [e1, e2]
                 if not e1plus in self.convex_vert: skipedges.append(e1plus)
-                if not e2minus in self.convex_vert: skipedges.append(e2minus)
+                #if not e2minus in self.convex_vert: skipedges.append(e2minus)
                 mine, mindist, rmine = self.nearestEdge(mp, skipedges)
                 #print mine,mindist,rmine,mp
                 skipconcaves = []
@@ -1560,13 +1586,12 @@ class Font(object):
                 if e1p in self.concave_vert :
                     if e1p  in self.handledconcaveedges and r<0.0:
                         break
-                    if e1p in self.handledconcaveedges and r >= 0.0:
-                        continue
+                    if not (e1p in self.handledconcaveedges and r >= 0.0):
 
-                    e1concaveedgefound = True
-                    currconcaveedge = e1p
-                    self.handledconcaveedges.append(e1p)
-                    # self.findCounterPart(e1,radius)
+                        e1concaveedgefound = True
+                        currconcaveedge = e1p
+                        self.handledconcaveedges.append(e1p)
+                        # self.findCounterPart(e1,radius)
                 else:
                     if self.its[e1].end() - self.its[e1].begin() < 0.1:
                         self.tracededges.append(e1)
