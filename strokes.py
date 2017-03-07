@@ -553,24 +553,25 @@ class Font(object):
                     cvfinal = cved
                     break
             else:
-                if self.checkPair(ed[1],0.0,self.prevedge(e10)):
+                if self.checkPair(cved[1],0.0,self.prevedge(e10)):
                     cvfinal = cved
                     break
+        #print "cp,",cvfinal,edgefinal,self.maxradius
         if len(cvfinal)>0 and len(edgefinal)>0:
-            if abs(cvfinal[0]-edgefinal[0])<30.0 and cvfinal[0]<self.maxradius*1.5:
+            if abs(cvfinal[0]-edgefinal[0])<30.0 and cvfinal[0]<self.maxradius*2.0:
                 cvfound=True
                 return cvfound,cvfinal
             elif edgefinal[0]<cvfinal[0] and edgefinal[0]<self.maxradius:
                 cvfound=False
                 return cvfound,edgefinal
-            elif cvfinal[0]<edgefinal[0] and cvfinal[0]<self.maxradius*1.5:
+            elif cvfinal[0]<edgefinal[0] and cvfinal[0]<self.maxradius*2.0:
                 cvfound = True
                 return cvfound,cvfinal
             else:
                 return True,[]
         elif len(edgefinal)>0 and len(cvfinal)==0 and edgefinal[0]<self.maxradius:
             return False,edgefinal
-        elif len(cvfinal)>0 and len(edgefinal)==0 and cvfinal[0]<self.maxradius*1.5:
+        elif len(cvfinal)>0 and len(edgefinal)==0 and cvfinal[0]<self.maxradius*2.0:
             return True,cvfinal
         else:
             return False,[]
@@ -1304,11 +1305,11 @@ class Font(object):
                         tin = t;
                         rin = -float('inf')
                         edges=[];eds.append(edges)
-                        e1n=e1prev;t1=t0;e2n=self.prevedge(minc2)
+                        e1n=e1prev;t1=mpcurr[2];e2n=self.prevedge(minc2)
                         if  self.checkPair(e1n,t1,e2n):
                             _,rn,mpn=self.footprint(e1n,t1,e2n)
                             self.mps.append([mpfin,e1n,t1,e2n,rn,radius])
-                            print "e2:shall have a branch",e1n,e2n
+                            print "e2:shall have a branch",e1n,e2n,t1
                         continue
                     elif  not cp[0] and len(cp[1])>0:
                         mine2=cp[1][1];
@@ -1376,15 +1377,15 @@ class Font(object):
                         e1n= minc1
                         _,_,t3=self.distance(e1n,mpfin,True)
                         if self.checkPair(e1n,t3,e2prev):
-                            _,_,t1=self.distance(e1n,mpfin,True)
                             _,rn,_ = self.footprint(e1n,t3,e2prev)
                             self.mps.append([mpfin,e1n,t3,e2prev,rn,radius])
-                            print "will have a branch of ",e1n,e2prev
+                            print "e1:will have a branch of ",e1n,e2prev,t3
                         else:
                             print "failed ",e1n,e2prev
 
                         continue
                     elif  not cp[0] and len(cp[1])>0:
+
                         mine1=cp[1][1];
                         _,_,rmine1=self.distance(mine1,resultMp)
                         #rmine1=cp[1][2]
@@ -1395,6 +1396,15 @@ class Font(object):
                         rin = -float('inf')
                         _, rfin, mpfin = self.footprint(e1, t, e2)
                         mpcurr = self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
+                        if not e2 in self.convex_vert:
+                            if rmine1>1.0:
+                                e1n=self.nextedge(mine1)
+                                _,_,tn=self.distance(e1n,resultMp,True)
+                            else:
+                                e1n=mine1;tn=rmine1
+                            print "e1:try continuing from here",e1n,e2prev,tn
+                            self.mps.append([resultMp,e1n,tn,e2prev,r,radius])
+
 
                         edges = [];
                         eds.append(edges)
@@ -1561,6 +1571,10 @@ class Font(object):
 
                 elif  concavedist:
                     print "dist failure with concavevert", mini, distconv, radius, e1concaveedgefound, e2concaveedgefound
+                    if self.maxradius < 1.0 or (self.maxradius < radius * 1.2 and radius < self.maxradius * 1.5):
+                        print self.maxradius, radius
+                        self.maxradius = radius * 1.2
+
                     if not edgechange:
                         mpcurr = self.retractConcave(mplast, mpcurr, distconv, mini)
                     if True:  # case#1
