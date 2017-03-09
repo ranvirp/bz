@@ -65,14 +65,20 @@ class bz(object):
     def distance(quad,p0,rin=0.4,debug=False):
         def f(t):
             #print t,bz.pprime(quad,t)
-            return np.dot(bz.pprime(quad,t),p0-bz.p(quad,t))
+            vect1 = bz.pprime(quad,t)
+            vect2 = p0-bz.p(quad,t)
+            #norm1 = np.linalg.norm(vect1)
+            #norm2=np.linalg.norm(vect2)
+            #return np.dot(vect1,vect2)/(norm1*norm2)
+            return np.dot(vect1,vect2)
+            #return np.cross(bz.normal)
         rs = [];rs.append(rin);rs.append(rin+0.2)
         rn = bz.secant(f,rs)
-        #print rn
+        #print rn,f(rn)
         p1 = bz.p(quad,rn);p1prime=bz.pprime(quad,rn)
         if True or debug:
-            ep=[];ep.append([p0]);ep.append([p0,p1]);ep.append([p1]);ep.append([p1,p1+p1prime])
-        #print abs(f(rn)),abs(np.cross(p0-p1,p1prime))
+            ep=[];ep.append([p0]);ep.append([p0,p1]);ep.append([p1,p1+p1prime])
+        #print "f(rn)",abs(f(rn)),abs(np.cross(p0-p1,p1prime)),abs(np.cross(p0-p1,p1prime)) <0.0001, np.cross(p0-p1,p1prime)>0
         if (abs(np.cross(p0-p1,p1prime)) <0.0001 or np.cross(p0-p1,p1prime)>0 )and abs(f(rn))<0.01: # point is on right side of the side
              return np.linalg.norm(p1-p0),p1,rn,ep
         #elif np.cross(p0-p1,p1prime) <0 and abs(f(rn))<1.0:
@@ -109,12 +115,14 @@ class bz(object):
         p1prime = bz.pprime(quad1, t)
         n1 = bz.normal(quad1,t,True)
         dist0, p2i, r1,_ = bz.distance(quad2, p1)  # randomly ..no partcular thought
+        rprev=r1
         if dist0 ==float('inf'):
             #print "here"
-            p2i = bz.p(quad2,0.5);dist0 = np.linalg.norm(p2i-p1)
+            p2i = bz.p(quad2,0.5);dist0 = np.linalg.norm(p2i-p1);rprev=0.5
 
         edges = []
         edges.append([p1]);edges.append([p1, p2i])
+
         #print dist0,r1,p1
         '''
         if r1 < 0.0:
@@ -133,9 +141,22 @@ class bz(object):
             if abs(costheta1) > 0.01:
                 dist1 = dist0 / (2 * abs(costheta1))
             else:
+
                 dist1 = dist0 / 2.0
             fpi = p1 + dist1 * n1
-            dist2, p2i, r1,_ = bz.distance(quad2, fpi)  # randomly ..no partcular thought
+            dist2, p2i, r1,_ = bz.distance(quad2, fpi,rprev)  # randomly ..no partcular thought
+            rprev=r1
+            '''
+            if dist2==float('inf'):
+                count2=0
+                while dist2==float('inf') and count2<30:
+                    dist1=dist1/2.0;count2+=1
+                    fpi=p1+dist1*n1
+                    dist2, p2i, r1, _ = bz.distance(quad2, fpi, rprev)  # randomly ..no partcular thought
+                    print "dist2,dist1",dist2,dist1
+                    rprev=r1
+            '''
+
             #print "dist2,",dist2,fpi,dist1,abs(dist2-dist1)
             if abs(dist2 - dist1) < 0.00001:
                 break
@@ -147,7 +168,7 @@ class bz(object):
         edges += [[p2i], [p1, p2i], [fpi]]
 
         #print r1,np.cross(fpi-p1,p1prime),abs(dist2-dist1),dist1,dist2
-        #bz.pe([[edges, 'g', '']])
+        #bz.pe([[edges, 'g', ''],[[quad1,quad2],'b','']])
 
         if np.cross(fpi - p1, p1prime) >= 0 and abs(dist2 - dist1) < 1e-2:
             #print "return here"
@@ -157,6 +178,14 @@ class bz(object):
     #return r,mp
     @staticmethod
     def pe(edges,n=False,l=False):
+        def onpick(event):
+            thisline = event.artist
+            xdata = thisline.get_xdata()
+            ydata = thisline.get_ydata()
+            ind = event.ind
+            points = tuple(zip(xdata[ind], ydata[ind]))
+            print('onpick points:', points)
+
         def bbox(pts):
             x = zip(*pts)[0];y=zip(*pts)[1]
             return min(x),min(y),max(x),max(y)
@@ -197,10 +226,14 @@ class bz(object):
             xmin = min(xmin,xmin1);xmax=max(xmax,xmax1);ymin=min(ymin,ymin1);ymax=max(ymax,ymax1)
             path = Path(verts, codes)
             patch = patches.PathPatch(path, facecolor='none',ec=ec, lw=2)
+            patch.picker=1.0
             ax.add_patch(patch)
         ax.set_xlim(xmin - 30, xmax + 30)
         ax.set_ylim(ymin - 30, ymax + 30)
+        cid=fig.canvas.mpl_connect('pick_event', onpick)
+        #print cid
         plt.show(block=False)
+        #plt.show()
 class Font(object):
     def __init__(self,gl="A",fontfile="DevanagariSangamMN.ttf",returnobj=False):
         font= ttfquery.describe.openFont(fontfile)
@@ -218,6 +251,8 @@ class Font(object):
         for cv in self.concave_vert:
             self.cvs[cv]={}
             self.updateo(cv)
+    def show(self):
+        bz.pe([[self.edges]],n=True)
 
     def apairs(self,e1,e2):
         if not str(e1)+"-"+str(e2) in self.pairs:
@@ -361,7 +396,7 @@ class Font(object):
             edges,r,mp = self.footprint(e1,t,e2)
             pts.append([mp])
             es += edges
-        bz.pe([[pts,'r',''],[[self.edges[e1],self.edges[e2]],'g','']])
+        bz.pe([[pts,'r',''],[[self.edges[e1],self.edges[e2]],'g',''],[self.edges,'b','']])
         return pts
 
     def distance(self,e,p,norangecheck=False,rin=0.4):
@@ -1168,6 +1203,8 @@ class Font(object):
         if e2 in self.tracededges:
             if self.debug: print "sorry", e2, "traced";
             return
+        convexedge = False
+        if e2 == self.prevedge(e1): convexedge=True
 
         terminateloop = False
         e1start = e1;
@@ -1331,8 +1368,9 @@ class Font(object):
 
                             continue
                         else:
-                            print "could not verify",e1,e2
-                            break
+                            #print "could not verify",e1,e2
+                            t=0.0
+                            continue
                     else: break
                 elif e1concaveedgefound and not e2concaveedgefound:
                     #print "here"
@@ -1497,7 +1535,7 @@ class Font(object):
 
                         continue
                     continue
-            elif   e2==self.prevedge(e1):
+            elif  convexedge:# or  e2==self.prevedge(e1):
                 #print "we check distance"
 
                 noofsteps = 0
@@ -1540,6 +1578,7 @@ class Font(object):
                 #print "radius=",radius
 
                 if  mindist < radius and not concavedist:
+                    convexedge=False
                     print "distance failure with ", mine,radius,mindist
                     if self.maxradius<1.0 or (self.maxradius<radius*1.2 and radius<self.maxradius*1.5):
                         print self.maxradius,radius
@@ -1570,6 +1609,8 @@ class Font(object):
                         continue
 
                 elif  concavedist:
+                    convexedge=False
+
                     print "dist failure with concavevert", mini, distconv, radius, e1concaveedgefound, e2concaveedgefound
                     if self.maxradius < 1.0 or (self.maxradius < radius * 1.2 and radius < self.maxradius * 1.5):
                         print self.maxradius, radius
@@ -2372,6 +2413,7 @@ class Font(object):
 
         return
     def pe1(self,edges):
+
         x = [];bzs=[];eds=[]
         for ed in edges:
             #print ed
