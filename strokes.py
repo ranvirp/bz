@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.path import Path
 from fitCurves import fitCurve
 import matplotlib.patches as patches
+from matplotlib.collections import PathCollection
 class bz(object):
     @staticmethod
     def ncr(n, r):
@@ -179,12 +180,84 @@ class bz(object):
     @staticmethod
     def pe(edges,n=False,l=False):
         def onpick(event):
-            thisline = event.artist
-            xdata = thisline.get_xdata()
-            ydata = thisline.get_ydata()
-            ind = event.ind
-            points = tuple(zip(xdata[ind], ydata[ind]))
-            print('onpick points:', points)
+            thispath = event.artist
+            paths =thispath.get_paths()
+            #xdata,ydata=event.get_data()
+            for path in paths:
+                if path.contains_point(event.mouseevent.xdata,event.mouseevent.ydata):
+                    print path
+            #path=thispath.get_path()
+            #print path
+            #for vertices,code in path.iter_segments():
+             #   print len(vertices)
+            #print('onpick points:', points)
+
+        def bbox(pts):
+            x = zip(*pts)[0];y=zip(*pts)[1]
+            return min(x),min(y),max(x),max(y)
+
+        def vc(eds,ax,ec):
+          verts = [];codes=[]
+          for ind,ed in enumerate(eds):
+              if len(ed[0])==0: continue
+              verts.append(ed[0]);codes.append(Path.MOVETO)
+              if n and len(ed[0])>0:
+                  #print ed
+                  ax.text(ed[0][0], ed[0][1], str(ind), style='italic',
+                          bbox={'facecolor': ec, 'alpha': 0.5, 'pad': 10})
+              if len(ed)==1:
+                  #print ed
+                  ax.plot(ed[0][0], ed[0][1], 'x-', color=ec)
+              elif len(ed)==2:
+                  verts.append(ed[1]);codes.append(Path.LINETO)
+              elif len(ed)==3:
+                  verts.append(ed[1]);codes.append(Path.CURVE3);verts.append(ed[2]);codes.append(Path.CURVE3)
+              elif len(ed)==4:
+                  verts.append(ed[1]);codes.append(Path.CURVE4);verts.append(ed[2]);codes.append(Path.CURVE4)
+                  verts.append(ed[3]);codes.append(Path.CURVE4)
+          return verts,codes
+
+        # list of edges
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        ec = 'r';label='';pts=[];
+        xmin=0.0;ymin=0.0;xmax = 0.0;ymax=0.0
+        patches1=[]
+        for eg in edges:
+            eg0=eg[0]
+            if len(eg)==3:
+                ec = eg[1];label = eg[2]
+            verts,codes = vc(eg0,ax,ec)
+            #print verts,codes
+            xmin1,ymin1,xmax1,ymax1 = bbox(verts)
+            xmin = min(xmin,xmin1);xmax=max(xmax,xmax1);ymin=min(ymin,ymin1);ymax=max(ymax,ymax1)
+            path = Path(verts, codes)
+            patches1=[path]
+            colors = 100 * np.random.rand(len(patches1))
+            p = PathCollection(patches1,facecolors=None, edgecolors=[ec])
+            p.set_picker(True)
+            #p.set_array(np.array(colors))
+            ax.add_collection(p)
+
+            #patch = patches.PathPatch(path, facecolor='none',ec=ec, lw=2)
+            #patch.picker=True
+            #path.set_picker(True)
+            #patches1 += path
+
+            #q=ax.add_patch(patch)
+
+            #q.picker=True
+        ax.set_xlim(xmin - 30, xmax + 30)
+        ax.set_ylim(ymin - 30, ymax + 30)
+        cid=fig.canvas.mpl_connect('pick_event', onpick)
+        #print cid
+        plt.show(block=False)
+        #plt.show()
+    def penew(edges,n=False,l=False):
+        def onpick(event):
+            thispath = event.artist
+            print thispath.get_path().vertices
+            #print('onpick points:', points)
 
         def bbox(pts):
             x = zip(*pts)[0];y=zip(*pts)[1]
@@ -226,8 +299,12 @@ class bz(object):
             xmin = min(xmin,xmin1);xmax=max(xmax,xmax1);ymin=min(ymin,ymin1);ymax=max(ymax,ymax1)
             path = Path(verts, codes)
             patch = patches.PathPatch(path, facecolor='none',ec=ec, lw=2)
-            patch.picker=1.0
-            ax.add_patch(patch)
+            #patch.picker=True
+            #patch.set_picker(True)
+
+            q=ax.add_patch(patch)
+
+            #q.picker=True
         ax.set_xlim(xmin - 30, xmax + 30)
         ax.set_ylim(ymin - 30, ymax + 30)
         cid=fig.canvas.mpl_connect('pick_event', onpick)
@@ -1195,8 +1272,9 @@ class Font(object):
         currconcaveedge = -1
         convexedgefound = False
         if str(e1) + "-" + str(e2) in self.pairs:
-            print "sorry this pair traced",e1,e2
+            print "sorry this pair traced", e1, e2
             return
+
         if e1 in self.tracededges:
             if self.debug: print "sorry", e1, " traced";
             return
@@ -1212,11 +1290,12 @@ class Font(object):
         tin = t;
         rin = -float('inf')
         print e1, e2
-        self.apairs(e1, e2)
         noofsteps = 0
 
         while not convexedgefound and not terminateloop:
             # while t < self.its[e1].end():
+            self.apairs(e1, e2)
+
             if e1 in self.tracededges or e2 in self.tracededges:
                 break
             e1plus = self.nextedge(e1);
@@ -1347,6 +1426,7 @@ class Font(object):
                             _,rn,mpn=self.footprint(e1n,t1,e2n)
                             self.mps.append([mpfin,e1n,t1,e2n,rn,radius])
                             print "e2:shall have a branch",e1n,e2n,t1
+                        self.apairs(e1,e2)
                         continue
                     elif  not cp[0] and len(cp[1])>0:
                         mine2=cp[1][1];
@@ -1365,6 +1445,7 @@ class Font(object):
                         edges = [];
                         eds.append(edges)
                         if self.checkPair(e1,t,e2):
+                            self.apairs(e1, e2)
 
                             continue
                         else:
@@ -1421,6 +1502,8 @@ class Font(object):
                         else:
                             print "failed ",e1n,e2prev
 
+                        self.apairs(e1, e2)
+
                         continue
                     elif  not cp[0] and len(cp[1])>0:
 
@@ -1446,6 +1529,7 @@ class Font(object):
 
                         edges = [];
                         eds.append(edges)
+                        self.apairs(e1, e2)
 
                         continue
                     else: break
@@ -1516,6 +1600,7 @@ class Font(object):
                         tin=t;rin=-float('inf')
                         edges = [];
                         eds.append(edges)
+                        self.apairs(e1, e2)
 
                         continue
 
@@ -1532,6 +1617,7 @@ class Font(object):
                         rin = -float('inf')
                         edges = [];
                         eds.append(edges)
+                        self.apairs(e1, e2)
 
                         continue
                     continue
@@ -1606,6 +1692,8 @@ class Font(object):
                         mplast[3] = e2
 
                         # edgechange=True
+                        self.apairs(e1, e2)
+
                         continue
 
                 elif  concavedist:
@@ -1627,6 +1715,8 @@ class Font(object):
                         rin = -float('inf')
                         print "continue with ", e1, t, e2
                         self.handledconcaveedges.append(mini)
+                        self.apairs(e1, e2)
+
                         continue
 
 
