@@ -224,6 +224,8 @@ class bz(object):
         xmin=0.0;ymin=0.0;xmax = 0.0;ymax=0.0
         patches1=[]
         for eg in edges:
+            ec = 'r';
+            label = '';
             eg0=eg[0]
             if len(eg)==3:
                 ec = eg[1];label = eg[2]
@@ -234,7 +236,7 @@ class bz(object):
             path = Path(verts, codes)
             patches1=[path]
             colors = 100 * np.random.rand(len(patches1))
-            p = PathCollection(patches1,facecolors=None, edgecolors=[ec])
+            p = PathCollection(patches1,facecolors=["none"], edgecolors=[ec])
             p.set_picker(True)
             #p.set_array(np.array(colors))
             ax.add_collection(p)
@@ -311,6 +313,27 @@ class bz(object):
         #print cid
         plt.show(block=False)
         #plt.show()
+    def merge(self,eds):
+        #if end of one edge and end of other edge ..e1 is same
+        def mergeeds(ed1,ed2):
+            if ed1[-1][1]==ed2[-1][1]:
+                ed1=ed1+ed2;ed2=[]
+            elif ed1[0][1]==ed2[-1][1]:
+                ed1=reversed(ed1)+ed2;ed2=[]
+            elif ed2[-1][1]==ed1[-1][1]:
+                ed2=ed1+ed2;ed1=[]
+            elif ed2[0][1]==ed1[-1][1]:
+                ed2=reversed(ed2)+ed1;ed1=[]
+            return ed1,ed2
+
+        for ind1,ed1 in enumerate(eds):
+            for ind2,ed2 in enumerate(eds):
+                if ind2<=ind1: continue
+
+
+
+
+        return
 class Font(object):
     def __init__(self,gl="A",fontfile="DevanagariSangamMN.ttf",returnobj=False):
         font= ttfquery.describe.openFont(fontfile)
@@ -1303,6 +1326,7 @@ class Font(object):
             noofsteps += 1
             _, r, mp = self.footprint(e1, t, e2)
             #print e1,t,e2,r
+            # Here, we take care of more than one intervals and search if t exists within intervals or not
             if t>=0.0 and t<=1.0 and len(self.its[e1].search(t))==0:
                 print e1,t,self.its[e1]
                 if self.its[e1].end()-self.its[e1].begin()>0.01:
@@ -1406,7 +1430,7 @@ class Font(object):
 
                         #print "adding here"
 
-                    if cp[0] and len(cp[1])>0 :
+                    if cp[0] and len(cp[1])>0 : # A counterpart concave edge has been found
                         minc2=cp[1][1]
                         #self.mps.append([mpcurr[0],e1, t, self.prevedge(minc2), 1.0,  mpcurr[-1]])
 
@@ -1416,42 +1440,51 @@ class Font(object):
                         _,_,t=self.distance(minc2,resultMp,True)
                         e1=minc2;e2=self.prevedge(e2)
                         _,r1,mpfin = self.footprint(e1,t,e2)
-                        mpcurr=self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
+                        mpcurr = self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
+                        if self.checkPair(e1,t,e2):
+                            self.mps.append([mpcurr, e1, t, e2, r1, radius])
+                            print "e2:shall have a branch", e1, e2, t
 
-                        tin = t;
-                        rin = -float('inf')
-                        edges=[];eds.append(edges)
+
                         e1n=e1prev;t1=mpcurr[2];e2n=self.prevedge(minc2)
                         if  self.checkPair(e1n,t1,e2n):
                             _,rn,mpn=self.footprint(e1n,t1,e2n)
-                            self.mps.append([mpfin,e1n,t1,e2n,rn,radius])
-                            print "e2:shall have a branch",e1n,e2n,t1
-                        self.apairs(e1,e2)
-                        continue
-                    elif  not cp[0] and len(cp[1])>0:
+                            e1=e1n;e2==e2n;t=t1
+                            tin = t;
+                            rin = rn
+                            edges = [];
+                            eds.append(edges)
+                            print "e2:continue with ",e1n,e2n,t1
+                            self.apairs(e1,e2)
+                            continue
+                        else: break
+                    elif  not cp[0] and len(cp[1])>0:# An edge has been found which would take it rightwards
                         mine2=cp[1][1];
                         _,_,rmine2=self.distance(mine2,resultMp)
                         #rmine2=cp[1][2]
                         e2=self.prevedge(e2)
                         print "e2:wil branch to edge",mine2,e2,rmine2
+
                         e1=mine2;t=rmine2;
                         tin = t;
                         rin = -float('inf')
                         count1 = 0;
-                        _, r1, mpfin = self.footprint(e1, t, e2)
-                        mpcurr=self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
 
-
-                        edges = [];
-                        eds.append(edges)
                         if self.checkPair(e1,t,e2):
-                            self.apairs(e1, e2)
-
-                            continue
+                            #self.apairs(e1, e2)
+                            _, r1, mpfin = self.footprint(e1, t, e2)
+                            mpcurr = self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
+                            self.mps.append([mpcurr, e1, t, e2, r1, radius])
                         else:
                             #print "could not verify",e1,e2
-                            t=0.0
-                            continue
+                            self.mps.append([mpcurr, e1, 0.0, e2, -float('inf'), radius])
+                        if not mine2 in self.convex_vert:
+                            e1=e1prev;t=mpcurr[2];e2=self.prevedge(mine2)
+                            if self.checkPair(e1,t,e2):
+                                continue
+                            else:
+                                break
+                        else: break
                     else: break
                 elif e1concaveedgefound and not e2concaveedgefound:
                     #print "here"
@@ -1465,58 +1498,47 @@ class Font(object):
                     #self.extendCv(e1prev, e2prev, t0, resultMp, radius, edges)
 
                     #print "e1:abs difference",e1,minc1,mine1,abs(mindistc1-mindist1)
-                    if cp[0] and len(cp[1])>0:
+                    if cp[0] and len(cp[1])>0: # a counterpart concave edge has been found
                         minc1=cp[1][1]
                         self.handledconcaveedges.append(minc1)
 
                         e1n=self.nextedge(e1);e2n=self.prevedge(minc1)
                         _, _, t1 = self.distance(e1n, resultMp, True)
-
-                        #self.mps.append([mpcurr[0], minc1, t1, e2, 1.0, mpcurr[-1]])
+                        _, r1, mpfin = self.footprint(e1n, t1, e2n)
+                        mpcurr = self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
+                        self.mps.append([mpcurr[0], e1n, t1, e2n, r1, mpcurr[-1]])
 
                         concavedist = True
                         print "e1:will branch to concave", e1n, e2n
                         #TODO
-
-                        #self.mps.append([mpcurr[0],self.nextedge(e1),0.0,minc1,1.0,mpcurr[-1]])
-                        e2 = e2n;
-
-                        e1 = e1n;
-                        _, rfin, mpfin = self.footprint(e1, t, e2)
-                        mpcurr = self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
-                        if not self.checkPair(e1n,t1,e2n):
-                            print "failed here",e1n,e2n,t1
-                            break
-                        t=t1
-
-
-                        tin=t;rin=-float('inf')
-                        edges = [];
-                        eds.append(edges)
                         e1n= minc1
                         _,_,t3=self.distance(e1n,mpfin,True)
                         if self.checkPair(e1n,t3,e2prev):
                             _,rn,_ = self.footprint(e1n,t3,e2prev)
-                            self.mps.append([mpfin,e1n,t3,e2prev,rn,radius])
+                            #self.mps.append([mpfin,e1n,t3,e2prev,rn,radius])
+                            e1=e1n;t=t3;tin=t;e2=e2prev;rin=rn
                             print "e1:will have a branch of ",e1n,e2prev,t3
+                            self.apairs(e1, e2)
+
+                            continue
                         else:
                             print "failed ",e1n,e2prev
-
-                        self.apairs(e1, e2)
-
-                        continue
+                            break
                     elif  not cp[0] and len(cp[1])>0:
 
                         mine1=cp[1][1];
                         _,_,rmine1=self.distance(mine1,resultMp)
                         #rmine1=cp[1][2]
-                        print "e1:branch to edge",self.nextedge(e1),mine1
                         e1=self.nextedge(e1);e2=mine1
+                        print "e1:branch to edge", e1, mine1
+
                         _, _, t = self.distance(e1, resultMp, True)
                         tin = t;
                         rin = -float('inf')
                         _, rfin, mpfin = self.footprint(e1, t, e2)
                         mpcurr = self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
+                        self.mps.append([mpcurr, e1, t, e2, rfin, radius])
+
                         if not e2 in self.convex_vert:
                             if rmine1>1.0:
                                 e1n=self.nextedge(mine1)
@@ -1524,14 +1546,14 @@ class Font(object):
                             else:
                                 e1n=mine1;tn=rmine1
                             print "e1:try continuing from here",e1n,e2prev,tn
-                            self.mps.append([resultMp,e1n,tn,e2prev,r,radius])
-
-
-                        edges = [];
-                        eds.append(edges)
-                        self.apairs(e1, e2)
-
-                        continue
+                            e1=e1n;e2=e2prev;t=tn;
+                            if self.checkPair(e1,t,e2):
+                                self.apairs(e1, e2)
+                                continue
+                            else:
+                                break
+                        else:
+                            break
                     else: break
                 elif e1concaveedgefound and e2concaveedgefound:
                     e2concaveedgefound = False
@@ -1550,7 +1572,7 @@ class Font(object):
                     resultMp = self.resultMp(e2, e1, radius, False)
 
 
-                    if cp2[0] and len(cp2[1])>0:
+                    if cp2[0] and len(cp2[1])>0: #counterpart concave edge of cp2 found
                         minc2=cp2[1][1]
                         concavedist = True
                         self.handledconcaveedges.append(minc2)
@@ -1596,13 +1618,9 @@ class Font(object):
                         _, _, t = self.distance(e1, resultMp, True)
                         _, rfin, mpfin = self.footprint(e1, t, e2)
                         mpcurr = self.extendCv(e1prev, e2prev, t0, mpfin, radius, edges)
+                        self.mps.append([mpcurr[0], e1, t, e2, 1.0, mpcurr[-1]])
 
-                        tin=t;rin=-float('inf')
-                        edges = [];
-                        eds.append(edges)
-                        self.apairs(e1, e2)
-
-                        continue
+                        break
 
 
                     elif not cp1[0] and len(cp1[1])>0:
@@ -1613,13 +1631,9 @@ class Font(object):
                         tin = t;
                         _, rfin, mpfin = self.footprint(e1, t, e2)
                         mpcurr=self.extendCv(e1prev,e2prev,t0,mpfin,radius,edges)
+                        self.mps.append([mpcurr[0], e1, t, e2, 1.0, mpcurr[-1]])
 
-                        rin = -float('inf')
-                        edges = [];
-                        eds.append(edges)
-                        self.apairs(e1, e2)
-
-                        continue
+                        break
                     continue
             elif  convexedge:# or  e2==self.prevedge(e1):
                 #print "we check distance"
@@ -2530,7 +2544,10 @@ class Font(object):
         x.append([bzs,'r',''])
         bz.pe(x)
         return bzs,eds
-
+    def pfile(self,ed):
+        fout = open("ed.out", "w")
+        fout.write(repr(ed))
+        fout.close()
 
 
 class strokes(object):
